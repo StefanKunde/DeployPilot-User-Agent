@@ -75,17 +75,21 @@ export type CommandPayload =
 export interface DeployPayload {
   projectId: string;
   deploymentId: string;
-  namespace: string;
-  appName: string;
+  subdomain: string;
   imageTag: string;
-  port: number;
-  domain?: string;
+  gitRepoUrl?: string;
+  buildCommand?: string;
   envVars: Record<string, string>;
-  resources: {
-    ram_mb: number;
+  resourceConfig: {
     cpu: number;
+    ram_mb: number;
     replicas: number;
   };
+  // Optional fields that may be sent
+  namespace?: string;
+  appName?: string;
+  port?: number;
+  domain?: string;
 }
 
 export interface StopPayload {

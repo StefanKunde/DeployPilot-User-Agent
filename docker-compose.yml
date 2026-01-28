@@ -1,0 +1,37 @@
+version: '3.8'
+
+services:
+  deploypilot-agent:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: deploypilot-agent
+    restart: unless-stopped
+    environment:
+      - SERVER_TOKEN=${SERVER_TOKEN}
+      - BACKEND_URL=${BACKEND_URL:-https://api.deploypilot.stefankunde.dev}
+      - POLL_INTERVAL_MS=${POLL_INTERVAL_MS:-10000}
+      - HEARTBEAT_INTERVAL_MS=${HEARTBEAT_INTERVAL_MS:-30000}
+      - LOG_LEVEL=${LOG_LEVEL:-info}
+      - MAX_CONCURRENT_COMMANDS=${MAX_CONCURRENT_COMMANDS:-3}
+      - PORT=${PORT:-3000}
+    ports:
+      - "3000:3000"
+    volumes:
+      # Mount kubeconfig for kubectl access
+      - ${HOME}/.kube:/root/.kube:ro
+      # Mount helper scripts if they exist on host
+      - /usr/local/bin/deploypilot-create-namespace:/usr/local/bin/deploypilot-create-namespace:ro
+      - /usr/local/bin/deploypilot-deploy-app:/usr/local/bin/deploypilot-deploy-app:ro
+      - /usr/local/bin/deploypilot-delete-app:/usr/local/bin/deploypilot-delete-app:ro
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"

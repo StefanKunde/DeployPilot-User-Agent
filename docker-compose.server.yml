@@ -1,0 +1,30 @@
+version: '3.8'
+
+services:
+  deploypilot-agent:
+    image: ghcr.io/stefankunde/user-server-agent:latest
+    container_name: deploypilot-agent
+    restart: always
+    network_mode: host
+    environment:
+      - SERVER_TOKEN=${SERVER_TOKEN}
+      - BACKEND_URL=https://api.deploypilot.stefankunde.dev
+      - LOG_LEVEL=info
+      - POLL_INTERVAL_MS=10000
+      - HEARTBEAT_INTERVAL_MS=30000
+      - MAX_CONCURRENT_COMMANDS=3
+      - PORT=3000
+    env_file:
+      - /etc/deploypilot.env
+    volumes:
+      # Kubeconfig for kubectl access
+      - /root/.kube:/root/.kube:ro
+      # Helper scripts
+      - /usr/local/bin/deploypilot-create-namespace:/usr/local/bin/deploypilot-create-namespace:ro
+      - /usr/local/bin/deploypilot-deploy-app:/usr/local/bin/deploypilot-deploy-app:ro
+      - /usr/local/bin/deploypilot-delete-app:/usr/local/bin/deploypilot-delete-app:ro
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "50m"
+        max-file: "5"

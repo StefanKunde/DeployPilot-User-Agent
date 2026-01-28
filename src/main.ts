@@ -38,27 +38,21 @@ async function bootstrap(): Promise<void> {
 }
 
 function getLogLevels(level?: string): ('log' | 'error' | 'warn' | 'debug' | 'verbose')[] {
-  const levels: ('log' | 'error' | 'warn' | 'debug' | 'verbose')[] = ['error'];
-
   switch (level?.toLowerCase()) {
     case 'verbose':
-      levels.push('verbose');
-    // fallthrough
+      return ['error', 'warn', 'log', 'debug', 'verbose'];
     case 'debug':
-      levels.push('debug');
-    // fallthrough
+      return ['error', 'warn', 'log', 'debug'];
     case 'info':
     case 'log':
-      levels.push('log');
-    // fallthrough
+      return ['error', 'warn', 'log'];
     case 'warn':
-      levels.push('warn');
-      break;
+      return ['error', 'warn'];
+    case 'error':
+      return ['error'];
     default:
-      levels.push('warn', 'log');
+      return ['error', 'warn', 'log'];
   }
-
-  return levels;
 }
 
 bootstrap().catch((error) => {

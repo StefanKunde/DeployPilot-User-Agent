@@ -272,8 +272,8 @@ CMD ${JSON.stringify(cmdArray)}
   private async importImageToK3s(
     imageTag: string,
   ): Promise<{ success: boolean; output: string; error?: string }> {
-    // Save image and import to K3s containerd
-    const cmd = `docker save ${this.escapeArg(imageTag)} | sudo k3s ctr images import -`;
+    // Save image and import to K3s containerd using ctr with socket
+    const cmd = `docker save ${this.escapeArg(imageTag)} | ctr -a /run/k3s/containerd/containerd.sock images import -`;
 
     try {
       const { stdout, stderr } = await execAsync(cmd, {

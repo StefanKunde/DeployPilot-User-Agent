@@ -19,6 +19,8 @@ services:
     volumes:
       # Docker socket for building images
       - /var/run/docker.sock:/var/run/docker.sock
+      # K3s containerd socket for image import
+      - /run/k3s/containerd/containerd.sock:/run/k3s/containerd/containerd.sock
       # K3s kubeconfig for kubectl access
       - /etc/rancher/k3s/k3s.yaml:/etc/rancher/k3s/k3s.yaml:ro
       # DeployPilot config (required by helper scripts)

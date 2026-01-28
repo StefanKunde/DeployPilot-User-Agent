@@ -190,6 +190,7 @@ metadata:
   namespace: ${namespace}
   annotations:
     cert-manager.io/cluster-issuer: "letsencrypt-prod"
+    traefik.ingress.kubernetes.io/router.tls: "true"
 spec:
   ingressClassName: traefik
   tls:

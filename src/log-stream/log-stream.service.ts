@@ -27,7 +27,7 @@ export class LogStreamService {
         { message, level, timestamp: new Date().toISOString() },
         {
           headers: {
-            Authorization: `Bearer ${this.serverToken}`,
+            'X-Server-Token': this.serverToken,
             'Content-Type': 'application/json',
           },
           timeout: 5000,
@@ -56,7 +56,7 @@ export class LogStreamService {
         { status, message },
         {
           headers: {
-            Authorization: `Bearer ${this.serverToken}`,
+            'X-Server-Token': this.serverToken,
             'Content-Type': 'application/json',
           },
           timeout: 5000,

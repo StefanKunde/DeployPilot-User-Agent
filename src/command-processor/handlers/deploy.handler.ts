@@ -111,7 +111,7 @@ export class DeployHandler extends BaseHandler<DeployPayload> {
 
       this.logger.log(`Successfully deployed ${payload.appName} at ${payload.domain}`);
       this.logStream.sendLog(payload.deploymentId, `Deployment successful: https://${payload.domain}`);
-      this.logStream.updateStatus(payload.deploymentId, 'running');
+      this.logStream.updateStatus(payload.deploymentId, 'ready');
 
       return {
         success: true,

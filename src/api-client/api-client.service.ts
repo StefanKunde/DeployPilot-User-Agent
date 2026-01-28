@@ -34,8 +34,14 @@ export class ApiClientService implements OnModuleInit {
       timeout: 30000,
     });
 
+    // Extract nested 'data' field from backend responses
     this.client.interceptors.response.use(
-      (response) => response,
+      (response) => {
+        if (response.data && typeof response.data === 'object' && 'data' in response.data) {
+          response.data = response.data.data;
+        }
+        return response;
+      },
       (error: AxiosError) => {
         this.logger.error(
           `API Error: ${error.message}`,

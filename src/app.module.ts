@@ -8,6 +8,7 @@ import { KubernetesModule } from './kubernetes';
 import { BuildModule } from './build';
 import { CommandProcessorModule } from './command-processor';
 import { HealthModule } from './health';
+import { LogStreamModule } from './log-stream';
 
 @Module({
   imports: [
@@ -16,6 +17,7 @@ import { HealthModule } from './health';
       load: [configuration],
     }),
     ScheduleModule.forRoot(),
+    LogStreamModule,
     ApiClientModule,
     HeartbeatModule,
     KubernetesModule,

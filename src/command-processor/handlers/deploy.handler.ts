@@ -3,6 +3,7 @@ import { BaseHandler, HandlerResult } from './base.handler';
 import { Command, DeployPayload } from '../../api-client/types';
 import { KubernetesService } from '../../kubernetes';
 import { BuildService } from '../../build';
+import { LogStreamService } from '../../log-stream';
 
 @Injectable()
 export class DeployHandler extends BaseHandler<DeployPayload> {
@@ -11,6 +12,7 @@ export class DeployHandler extends BaseHandler<DeployPayload> {
   constructor(
     kubernetesService: KubernetesService,
     private readonly buildService: BuildService,
+    private readonly logStream: LogStreamService,
   ) {
     super(kubernetesService);
   }
@@ -24,12 +26,18 @@ export class DeployHandler extends BaseHandler<DeployPayload> {
     );
     this.logger.log(`Framework: ${payload.framework}, Git: ${payload.gitRepoUrl}`);
 
+    // Update status to building
+    this.logStream.updateStatus(payload.deploymentId, 'building');
+    this.logStream.sendLog(payload.deploymentId, `Starting deployment of ${payload.appName}`);
+
     try {
       // Step 1: Ensure namespace exists
-      this.logger.log(`Step 1: Ensuring namespace ${payload.namespace} exists`);
+      this.logStream.sendLog(payload.deploymentId, `Creating namespace ${payload.namespace}...`);
       const nsResult = await this.kubernetesService.ensureNamespace(payload.namespace);
       if (!nsResult.success) {
         this.logger.error(`Failed to create namespace: ${nsResult.error}`);
+        this.logStream.sendLog(payload.deploymentId, `Failed to create namespace: ${nsResult.error}`, 'error');
+        this.logStream.updateStatus(payload.deploymentId, 'failed', `Namespace creation failed: ${nsResult.error}`);
         return {
           success: false,
           error: `Namespace creation failed: ${nsResult.error}`,
@@ -37,8 +45,9 @@ export class DeployHandler extends BaseHandler<DeployPayload> {
         };
       }
       logs.push(`Namespace ${payload.namespace} ready`);
+      this.logStream.sendLog(payload.deploymentId, `Namespace ${payload.namespace} ready`);
 
-      // Step 2: Build the application
+      // Step 2: Build the application (logs are sent by BuildService)
       this.logger.log(`Step 2: Building application from ${payload.gitRepoUrl}`);
       const buildResult = await this.buildService.build({
         appName: payload.appName,
@@ -57,6 +66,7 @@ export class DeployHandler extends BaseHandler<DeployPayload> {
 
       if (!buildResult.success) {
         this.logger.error(`Build failed: ${buildResult.error}`);
+        this.logStream.updateStatus(payload.deploymentId, 'failed', `Build failed: ${buildResult.error}`);
         return {
           success: false,
           error: `Build failed: ${buildResult.error}`,
@@ -67,12 +77,14 @@ export class DeployHandler extends BaseHandler<DeployPayload> {
       this.logger.log(`Build successful: ${buildResult.imageName}`);
 
       // Step 3: Deploy to Kubernetes
-      this.logger.log(`Step 3: Deploying to Kubernetes`);
+      this.logStream.updateStatus(payload.deploymentId, 'deploying');
+      this.logStream.sendLog(payload.deploymentId, `Deploying to Kubernetes...`);
 
       // Static frameworks use nginx on port 80
       const staticFrameworks = ['angular', 'react', 'react-vite', 'vue', 'static'];
       const containerPort = staticFrameworks.includes(payload.framework) ? 80 : payload.port;
 
+      this.logStream.sendLog(payload.deploymentId, `Creating Deployment, Service, and Ingress with TLS...`);
       const deployResult = await this.kubernetesService.deployAppWithImage(
         payload.namespace,
         payload.appName,
@@ -85,6 +97,8 @@ export class DeployHandler extends BaseHandler<DeployPayload> {
 
       if (!deployResult.success) {
         this.logger.error(`Kubernetes deployment failed: ${deployResult.error}`);
+        this.logStream.sendLog(payload.deploymentId, `Kubernetes deployment failed: ${deployResult.error}`, 'error');
+        this.logStream.updateStatus(payload.deploymentId, 'failed', `Deployment failed: ${deployResult.error}`);
         return {
           success: false,
           error: `Deployment failed: ${deployResult.error}`,
@@ -96,6 +110,8 @@ export class DeployHandler extends BaseHandler<DeployPayload> {
       logs.push(`Domain: ${payload.domain}`);
 
       this.logger.log(`Successfully deployed ${payload.appName} at ${payload.domain}`);
+      this.logStream.sendLog(payload.deploymentId, `Deployment successful: https://${payload.domain}`);
+      this.logStream.updateStatus(payload.deploymentId, 'running');
 
       return {
         success: true,
@@ -104,6 +120,8 @@ export class DeployHandler extends BaseHandler<DeployPayload> {
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
       this.logger.error(`Deployment error: ${errorMessage}`);
+      this.logStream.sendLog(payload.deploymentId, `Deployment error: ${errorMessage}`, 'error');
+      this.logStream.updateStatus(payload.deploymentId, 'failed', errorMessage);
       return {
         success: false,
         error: errorMessage,

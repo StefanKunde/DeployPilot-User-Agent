@@ -4,6 +4,7 @@ import { promisify } from 'util';
 import * as fs from 'fs/promises';
 import * as path from 'path';
 import { Framework } from '../api-client/types';
+import { LogStreamService, LogLevel } from '../log-stream';
 
 const execAsync = promisify(exec);
 
@@ -34,23 +35,27 @@ export interface BuildConfig {
 export class BuildService {
   private readonly logger = new Logger(BuildService.name);
 
+  constructor(private readonly logStream: LogStreamService) {}
+
   async build(config: BuildConfig): Promise<BuildResult> {
     const buildDir = path.join(BUILD_DIR, config.appName);
     const imageTag = `${config.appName}:${config.deploymentId}`;
     const logs: string[] = [];
+    const startTime = Date.now();
 
-    const log = (message: string) => {
+    const log = (message: string, level: LogLevel = 'info') => {
       this.logger.log(message);
       logs.push(`[${new Date().toISOString()}] ${message}`);
+      this.logStream.sendLog(config.deploymentId, message, level);
     };
 
     try {
       // Step 1: Prepare build directory
-      log(`Preparing build directory: ${buildDir}`);
+      log(`Preparing build directory...`);
       await this.prepareBuildDir(buildDir);
 
       // Step 2: Clone repository
-      log(`Cloning repository: ${config.gitRepoUrl} (branch: ${config.gitBranch})`);
+      log(`Cloning repository from ${config.gitRepoUrl} (branch: ${config.gitBranch})...`);
       const cloneResult = await this.cloneRepository(
         config.gitRepoUrl,
         config.gitBranch,
@@ -59,8 +64,10 @@ export class BuildService {
       logs.push(cloneResult.output);
 
       if (!cloneResult.success) {
+        log(`Failed to clone repository: ${cloneResult.error}`, 'error');
         throw new Error(`Git clone failed: ${cloneResult.error}`);
       }
+      log(`Repository cloned successfully`);
 
       // Step 3: Generate Dockerfile if needed
       const dockerfilePath = path.join(buildDir, 'Dockerfile');
@@ -76,24 +83,31 @@ export class BuildService {
       }
 
       // Step 4: Build Docker image
-      log(`Building Docker image: ${imageTag}`);
+      log(`Building Docker image...`);
+      const buildStartTime = Date.now();
       const buildResult = await this.buildImage(imageTag, buildDir);
       logs.push(buildResult.output);
 
       if (!buildResult.success) {
+        log(`Docker build failed: ${buildResult.error}`, 'error');
         throw new Error(`Docker build failed: ${buildResult.error}`);
       }
+      const buildDuration = Math.round((Date.now() - buildStartTime) / 1000);
+      log(`Docker image built successfully in ${buildDuration}s`);
 
       // Step 5: Import image to K3s
-      log(`Importing image to K3s: ${imageTag}`);
+      log(`Importing image to K3s...`);
       const importResult = await this.importImageToK3s(imageTag);
       logs.push(importResult.output);
 
       if (!importResult.success) {
+        log(`Failed to import image to K3s: ${importResult.error}`, 'error');
         throw new Error(`Image import failed: ${importResult.error}`);
       }
+      log(`Image imported to K3s successfully`);
 
-      log(`Build completed successfully: ${imageTag}`);
+      const totalDuration = Math.round((Date.now() - startTime) / 1000);
+      log(`Build completed successfully in ${totalDuration}s`);
 
       return {
         success: true,
@@ -104,6 +118,7 @@ export class BuildService {
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
       this.logger.error(`Build failed: ${errorMessage}`);
       logs.push(`ERROR: ${errorMessage}`);
+      this.logStream.sendLog(config.deploymentId, `Build failed: ${errorMessage}`, 'error');
 
       return {
         success: false,

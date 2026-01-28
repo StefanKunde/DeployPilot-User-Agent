@@ -75,28 +75,27 @@ jobs:
             docker-compose.server.yml \
             ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }}:/opt/deploypilot-agent/docker-compose.yml
 
-      - name: Deploy on server
-        env:
-          SERVER_TOKEN: ${{ secrets.SERVER_TOKEN }}
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Create .env file on server
         run: |
-          ssh -o StrictHostKeyChecking=no ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }} << ENDSSH
+          ssh -o StrictHostKeyChecking=no ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }} \
+            "echo 'SERVER_TOKEN=${{ secrets.SERVER_TOKEN }}' > /opt/deploypilot-agent/.env && chmod 600 /opt/deploypilot-agent/.env"
+
+      - name: Docker login on server
+        run: |
+          ssh -o StrictHostKeyChecking=no ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }} \
+            "echo '${{ secrets.GITHUB_TOKEN }}' | docker login ghcr.io -u ${{ github.actor }} --password-stdin"
+
+      - name: Deploy on server
+        run: |
+          ssh -o StrictHostKeyChecking=no ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }} << 'ENDSSH'
             set -e
-
             cd /opt/deploypilot-agent
-
-            # Write SERVER_TOKEN to env file
-            echo "SERVER_TOKEN=${SERVER_TOKEN}" | sudo tee /etc/deploypilot.env > /dev/null
-            sudo chmod 600 /etc/deploypilot.env
-
-            # Login to GitHub Container Registry
-            echo "${GITHUB_TOKEN}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
 
             # Pull latest image
             docker compose pull
 
-            # Restart container with new image (SERVER_TOKEN must be in environment for docker-compose)
-            SERVER_TOKEN="${SERVER_TOKEN}" docker compose up -d --force-recreate
+            # Restart container with new image
+            docker compose up -d --force-recreate
 
             # Cleanup old images
             docker image prune -f

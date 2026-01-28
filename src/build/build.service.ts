@@ -183,6 +183,8 @@ export class BuildService {
   private generateStaticDockerfile(buildCommand: string | null, outputDirectory: string): string {
     const buildCmd = buildCommand || 'npm run build';
 
+    // Use a smart copy script that finds index.html dynamically
+    // This handles Angular 17+ which builds to dist/{project}/browser/
     return `# Auto-generated Dockerfile for static site
 FROM node:20-alpine AS builder
 WORKDIR /app
@@ -191,8 +193,14 @@ RUN npm ci
 COPY . .
 RUN ${buildCmd}
 
+# Find the actual output directory containing index.html
+RUN OUTPUT_DIR=$(find /app/${outputDirectory} -name "index.html" -type f 2>/dev/null | head -1 | xargs dirname 2>/dev/null) && \\
+    if [ -z "$OUTPUT_DIR" ]; then OUTPUT_DIR="/app/${outputDirectory}"; fi && \\
+    mkdir -p /app/_output && \\
+    cp -r "$OUTPUT_DIR"/* /app/_output/
+
 FROM nginx:alpine
-COPY --from=builder /app/${outputDirectory} /usr/share/nginx/html
+COPY --from=builder /app/_output /usr/share/nginx/html
 EXPOSE 80
 CMD ["nginx", "-g", "daemon off;"]
 `;

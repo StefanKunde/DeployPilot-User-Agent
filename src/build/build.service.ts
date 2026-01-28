@@ -177,7 +177,7 @@ export class BuildService {
   }
 
   private isStaticFramework(framework: Framework): boolean {
-    return ['angular', 'react', 'vue', 'static'].includes(framework);
+    return ['angular', 'react', 'react-vite', 'vue', 'static'].includes(framework);
   }
 
   private generateStaticDockerfile(buildCommand: string | null, outputDirectory: string): string {

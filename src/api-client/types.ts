@@ -75,6 +75,7 @@ export type CommandPayload =
 export type Framework =
   | 'angular'
   | 'react'
+  | 'react-vite'
   | 'vue'
   | 'nextjs'
   | 'nodejs'

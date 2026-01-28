@@ -68,11 +68,16 @@ export class DeployHandler extends BaseHandler<DeployPayload> {
 
       // Step 3: Deploy to Kubernetes
       this.logger.log(`Step 3: Deploying to Kubernetes`);
+
+      // Static frameworks use nginx on port 80
+      const staticFrameworks = ['angular', 'react', 'react-vite', 'vue', 'static'];
+      const containerPort = staticFrameworks.includes(payload.framework) ? 80 : payload.port;
+
       const deployResult = await this.kubernetesService.deployAppWithImage(
         payload.namespace,
         payload.appName,
         buildResult.imageName,
-        payload.port,
+        containerPort,
         payload.domain,
         payload.envVars,
         payload.resourceConfig,

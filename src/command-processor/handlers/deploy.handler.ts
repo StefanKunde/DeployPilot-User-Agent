@@ -3,10 +3,6 @@ import { BaseHandler, HandlerResult } from './base.handler';
 import { Command, DeployPayload } from '../../api-client/types';
 import { KubernetesService } from '../../kubernetes';
 
-const APPS_DOMAIN = 'apps.deploypilot.stefankunde.dev';
-const DEFAULT_NAMESPACE = 'user-default';
-const DEFAULT_PORT = 3000;
-
 @Injectable()
 export class DeployHandler extends BaseHandler<DeployPayload> {
   protected readonly logger = new Logger(DeployHandler.name);
@@ -18,45 +14,43 @@ export class DeployHandler extends BaseHandler<DeployPayload> {
   async handle(command: Command): Promise<HandlerResult> {
     const payload = this.getPayload(command);
 
-    // Map backend payload to kubernetes values
-    const namespace = payload.namespace || DEFAULT_NAMESPACE;
-    const appName = payload.appName || payload.subdomain;
-    const image = payload.imageTag;
-    const port = payload.port || DEFAULT_PORT;
-    const domain = payload.domain || `${payload.subdomain}.${APPS_DOMAIN}`;
-    const envVars = payload.envVars || {};
-
     this.logger.log(
-      `Deploying ${appName} to namespace ${namespace} with image ${image}`,
+      `Deploying ${payload.appName} to namespace ${payload.namespace} with image ${payload.imageTag}`,
     );
-    this.logger.debug(`Domain: ${domain}, Port: ${port}`);
+    this.logger.debug(`Domain: ${payload.domain}, Port: ${payload.port}`);
 
-    // Deploy the application
+    // Step 1: Ensure namespace exists
+    const nsResult = await this.kubernetesService.ensureNamespace(payload.namespace);
+    if (!nsResult.success) {
+      this.logger.error(`Failed to create namespace ${payload.namespace}: ${nsResult.error}`);
+      return this.formatResult(nsResult);
+    }
+
+    // Step 2: Deploy the application
     const result = await this.kubernetesService.deployApp(
-      namespace,
-      appName,
-      image,
-      port,
-      domain,
+      payload.namespace,
+      payload.appName,
+      payload.imageTag,
+      payload.port,
+      payload.domain,
     );
 
     if (!result.success) {
-      this.logger.error(`Deployment failed for ${appName}: ${result.error}`);
+      this.logger.error(`Deployment failed for ${payload.appName}: ${result.error}`);
       return this.formatResult(result);
     }
 
-    // Set environment variables after deployment
-    if (Object.keys(envVars).length > 0) {
-      this.logger.debug(`Setting ${Object.keys(envVars).length} environment variables`);
+    // Step 3: Set environment variables after deployment
+    if (payload.envVars && Object.keys(payload.envVars).length > 0) {
+      this.logger.debug(`Setting ${Object.keys(payload.envVars).length} environment variables`);
       const envResult = await this.kubernetesService.setEnvVars(
-        namespace,
-        appName,
-        envVars,
+        payload.namespace,
+        payload.appName,
+        payload.envVars,
       );
 
       if (!envResult.success) {
-        this.logger.warn(`Failed to set env vars for ${appName}: ${envResult.error}`);
-        // Don't fail the whole deployment for env var issues
+        this.logger.warn(`Failed to set env vars for ${payload.appName}: ${envResult.error}`);
         return {
           success: true,
           logs: `Deployment succeeded but env vars failed: ${envResult.error}\n${result.stdout}`,
@@ -64,7 +58,7 @@ export class DeployHandler extends BaseHandler<DeployPayload> {
       }
     }
 
-    this.logger.log(`Successfully deployed ${appName} at ${domain}`);
+    this.logger.log(`Successfully deployed ${payload.appName} at ${payload.domain}`);
     return this.formatResult(result);
   }
 }

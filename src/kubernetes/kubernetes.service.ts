@@ -43,6 +43,27 @@ export class KubernetesService {
     }
   }
 
+  // Ensure namespace exists (create if not)
+  async ensureNamespace(namespace: string): Promise<CommandResult> {
+    // Check if namespace exists
+    const checkCmd = `kubectl get namespace ${this.escapeArg(namespace)} --ignore-not-found -o name`;
+    const checkResult = await this.executeCommand(checkCmd);
+
+    if (checkResult.success && checkResult.stdout.includes('namespace/')) {
+      this.logger.debug(`Namespace ${namespace} already exists`);
+      return {
+        success: true,
+        stdout: `Namespace ${namespace} already exists`,
+        stderr: '',
+      };
+    }
+
+    // Create namespace
+    this.logger.log(`Creating namespace ${namespace}`);
+    const createCmd = `kubectl create namespace ${this.escapeArg(namespace)}`;
+    return this.executeCommand(createCmd);
+  }
+
   // Helper Scripts (existing on server)
   async createNamespace(userId: string, githubToken?: string): Promise<CommandResult> {
     const cmd = githubToken

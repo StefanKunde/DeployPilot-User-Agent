@@ -27,10 +27,17 @@ export interface AgentConfig {
 // Heartbeat
 export type AgentStatus = 'online' | 'busy' | 'error';
 
+export interface RunningPod {
+  projectId: string;
+  podName: string;
+  status: string;
+  restarts?: number;
+}
+
 export interface HeartbeatRequest {
   status: AgentStatus;
   resources: ResourceInfo;
-  runningPods: number;
+  runningPods: RunningPod[];
   errorMessage?: string;
 }
 

@@ -1,6 +1,6 @@
 import { Injectable, Logger, OnModuleInit, OnModuleDestroy } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { ApiClientService, AgentStatus, ResourceInfo } from '../api-client';
+import { ApiClientService, AgentStatus, ResourceInfo, RunningPod } from '../api-client';
 import * as os from 'os';
 
 @Injectable()
@@ -50,7 +50,7 @@ export class HeartbeatService implements OnModuleInit, OnModuleDestroy {
   private async sendHeartbeat(): Promise<void> {
     const status = this.determineStatus();
     const resources = this.getSystemResources();
-    const runningPods = await this.getRunningPodsCount();
+    const runningPods = this.getRunningPods();
 
     try {
       await this.apiClient.sendHeartbeat({
@@ -59,7 +59,7 @@ export class HeartbeatService implements OnModuleInit, OnModuleDestroy {
         runningPods,
         errorMessage: this.lastError ?? undefined,
       });
-      this.logger.debug(`Heartbeat sent: status=${status}, runningPods=${runningPods}`);
+      this.logger.debug(`Heartbeat sent: status=${status}, runningPods=${runningPods.length}`);
     } catch (error) {
       // Don't throw - heartbeat should not block other operations
       this.logger.warn('Failed to send heartbeat, will retry on next interval');
@@ -87,18 +87,8 @@ export class HeartbeatService implements OnModuleInit, OnModuleDestroy {
     };
   }
 
-  private async getRunningPodsCount(): Promise<number> {
-    try {
-      const { exec } = await import('child_process');
-      const { promisify } = await import('util');
-      const execAsync = promisify(exec);
-
-      const { stdout } = await execAsync(
-        'kubectl get pods --all-namespaces --field-selector=status.phase=Running -o json 2>/dev/null | grep -c \'"phase": "Running"\' || echo "0"',
-      );
-      return parseInt(stdout.trim(), 10) || 0;
-    } catch {
-      return 0;
-    }
+  private getRunningPods(): RunningPod[] {
+    // TODO: Implement actual pod discovery if needed
+    return [];
   }
 }

@@ -17,6 +17,8 @@ services:
       - PORT=3000
       - KUBECONFIG=/etc/rancher/k3s/k3s.yaml
     volumes:
+      # Docker socket for building images
+      - /var/run/docker.sock:/var/run/docker.sock
       # K3s kubeconfig for kubectl access
       - /etc/rancher/k3s/k3s.yaml:/etc/rancher/k3s/k3s.yaml:ro
       # DeployPilot config (required by helper scripts)

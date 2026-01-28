@@ -95,8 +95,8 @@ jobs:
             # Pull latest image
             docker compose pull
 
-            # Restart container with new image
-            docker compose up -d --force-recreate
+            # Restart container with new image (SERVER_TOKEN must be in environment for docker-compose)
+            SERVER_TOKEN="${SERVER_TOKEN}" docker compose up -d --force-recreate
 
             # Cleanup old images
             docker image prune -f

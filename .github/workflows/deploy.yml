@@ -76,14 +76,21 @@ jobs:
             ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }}:/opt/deploypilot-agent/docker-compose.yml
 
       - name: Deploy on server
+        env:
+          SERVER_TOKEN: ${{ secrets.SERVER_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          ssh -o StrictHostKeyChecking=no ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }} << 'ENDSSH'
+          ssh -o StrictHostKeyChecking=no ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }} << ENDSSH
             set -e
 
             cd /opt/deploypilot-agent
 
+            # Write SERVER_TOKEN to env file
+            echo "SERVER_TOKEN=${SERVER_TOKEN}" | sudo tee /etc/deploypilot.env > /dev/null
+            sudo chmod 600 /etc/deploypilot.env
+
             # Login to GitHub Container Registry
-            echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
+            echo "${GITHUB_TOKEN}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
 
             # Pull latest image
             docker compose pull

@@ -2,7 +2,7 @@ version: '3.8'
 
 services:
   deploypilot-agent:
-    image: ghcr.io/stefankunde/user-server-agent:latest
+    image: ghcr.io/stefankunde/deploypilot-user-agent:latest
     container_name: deploypilot-agent
     restart: always
     network_mode: host

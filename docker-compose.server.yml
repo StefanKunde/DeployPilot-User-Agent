@@ -15,9 +15,10 @@ services:
       - HEARTBEAT_INTERVAL_MS=30000
       - MAX_CONCURRENT_COMMANDS=3
       - PORT=3000
+      - KUBECONFIG=/etc/rancher/k3s/k3s.yaml
     volumes:
-      # Kubeconfig for kubectl access
-      - /root/.kube:/root/.kube:ro
+      # K3s kubeconfig for kubectl access
+      - /etc/rancher/k3s/k3s.yaml:/etc/rancher/k3s/k3s.yaml:ro
       # Helper scripts
       - /usr/local/bin/deploypilot-create-namespace:/usr/local/bin/deploypilot-create-namespace:ro
       - /usr/local/bin/deploypilot-deploy-app:/usr/local/bin/deploypilot-deploy-app:ro

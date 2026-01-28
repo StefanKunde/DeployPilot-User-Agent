@@ -26,7 +26,7 @@ export class ApiClientService implements OnModuleInit {
     const serverToken = this.configService.get<string>('serverToken');
 
     this.client = axios.create({
-      baseURL: `${backendUrl}/agents`,
+      baseURL: `${backendUrl}/api/agents`,
       headers: {
         'Content-Type': 'application/json',
         'X-Server-Token': serverToken,

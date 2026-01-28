@@ -28,15 +28,15 @@ export class DeployHandler extends BaseHandler<DeployPayload> {
 
     // Update status to building
     this.logStream.updateStatus(payload.deploymentId, 'building');
-    this.logStream.sendLog(payload.deploymentId, `Starting deployment of ${payload.appName}`);
+    this.logStream.sendLog(payload.deploymentId, `Starting deployment of ${payload.appName}`, 'info', 'general');
 
     try {
       // Step 1: Ensure namespace exists
-      this.logStream.sendLog(payload.deploymentId, `Creating namespace ${payload.namespace}...`);
+      this.logStream.sendLog(payload.deploymentId, `Creating namespace ${payload.namespace}...`, 'info', 'deploy');
       const nsResult = await this.kubernetesService.ensureNamespace(payload.namespace);
       if (!nsResult.success) {
         this.logger.error(`Failed to create namespace: ${nsResult.error}`);
-        this.logStream.sendLog(payload.deploymentId, `Failed to create namespace: ${nsResult.error}`, 'error');
+        this.logStream.sendLog(payload.deploymentId, `Failed to create namespace: ${nsResult.error}`, 'error', 'deploy');
         this.logStream.updateStatus(payload.deploymentId, 'failed', `Namespace creation failed: ${nsResult.error}`);
         return {
           success: false,
@@ -45,7 +45,7 @@ export class DeployHandler extends BaseHandler<DeployPayload> {
         };
       }
       logs.push(`Namespace ${payload.namespace} ready`);
-      this.logStream.sendLog(payload.deploymentId, `Namespace ${payload.namespace} ready`);
+      this.logStream.sendLog(payload.deploymentId, `Namespace ${payload.namespace} ready`, 'info', 'deploy');
 
       // Step 2: Build the application (logs are sent by BuildService)
       this.logger.log(`Step 2: Building application from ${payload.gitRepoUrl}`);
@@ -78,13 +78,13 @@ export class DeployHandler extends BaseHandler<DeployPayload> {
 
       // Step 3: Deploy to Kubernetes
       this.logStream.updateStatus(payload.deploymentId, 'deploying');
-      this.logStream.sendLog(payload.deploymentId, `Deploying to Kubernetes...`);
+      this.logStream.sendLog(payload.deploymentId, `Deploying to Kubernetes...`, 'info', 'deploy');
 
       // Static frameworks use nginx on port 80
       const staticFrameworks = ['angular', 'react', 'react-vite', 'vue', 'static'];
       const containerPort = staticFrameworks.includes(payload.framework) ? 80 : payload.port;
 
-      this.logStream.sendLog(payload.deploymentId, `Creating Deployment, Service, and Ingress with TLS...`);
+      this.logStream.sendLog(payload.deploymentId, `Creating Deployment, Service, and Ingress with TLS...`, 'info', 'deploy');
       const deployResult = await this.kubernetesService.deployAppWithImage(
         payload.namespace,
         payload.appName,
@@ -97,7 +97,7 @@ export class DeployHandler extends BaseHandler<DeployPayload> {
 
       if (!deployResult.success) {
         this.logger.error(`Kubernetes deployment failed: ${deployResult.error}`);
-        this.logStream.sendLog(payload.deploymentId, `Kubernetes deployment failed: ${deployResult.error}`, 'error');
+        this.logStream.sendLog(payload.deploymentId, `Kubernetes deployment failed: ${deployResult.error}`, 'error', 'deploy');
         this.logStream.updateStatus(payload.deploymentId, 'failed', `Deployment failed: ${deployResult.error}`);
         return {
           success: false,
@@ -110,7 +110,7 @@ export class DeployHandler extends BaseHandler<DeployPayload> {
       logs.push(`Domain: ${payload.domain}`);
 
       this.logger.log(`Successfully deployed ${payload.appName} at ${payload.domain}`);
-      this.logStream.sendLog(payload.deploymentId, `Deployment successful: https://${payload.domain}`);
+      this.logStream.sendLog(payload.deploymentId, `Deployment successful: https://${payload.domain}`, 'info', 'deploy');
       this.logStream.updateStatus(payload.deploymentId, 'ready');
 
       return {
@@ -120,7 +120,7 @@ export class DeployHandler extends BaseHandler<DeployPayload> {
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
       this.logger.error(`Deployment error: ${errorMessage}`);
-      this.logStream.sendLog(payload.deploymentId, `Deployment error: ${errorMessage}`, 'error');
+      this.logStream.sendLog(payload.deploymentId, `Deployment error: ${errorMessage}`, 'error', 'general');
       this.logStream.updateStatus(payload.deploymentId, 'failed', errorMessage);
       return {
         success: false,

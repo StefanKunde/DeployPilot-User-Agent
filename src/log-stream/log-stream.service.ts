@@ -2,7 +2,15 @@ import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import axios from 'axios';
 
-export type LogLevel = 'info' | 'warn' | 'error';
+export type LogLevel = 'info' | 'warn' | 'error' | 'debug';
+export type LogStep =
+  | 'clone'
+  | 'install'
+  | 'build'
+  | 'deploy'
+  | 'health-check'
+  | 'cleanup'
+  | 'general';
 
 @Injectable()
 export class LogStreamService {
@@ -18,13 +26,18 @@ export class LogStreamService {
   /**
    * Send a log message to the backend (fire-and-forget)
    */
-  sendLog(deploymentId: string, message: string, level: LogLevel = 'info'): void {
+  sendLog(
+    deploymentId: string,
+    message: string,
+    level: LogLevel = 'info',
+    step: LogStep = 'general',
+  ): void {
     const url = `${this.backendUrl}/api/deployments/${deploymentId}/logs`;
 
     axios
       .post(
         url,
-        { message, level, timestamp: new Date().toISOString() },
+        { message, level, timestamp: new Date().toISOString(), step },
         {
           headers: {
             'X-Server-Token': this.serverToken,
@@ -34,9 +47,7 @@ export class LogStreamService {
         },
       )
       .catch((error) => {
-        this.logger.debug(
-          `Failed to send log to backend: ${error.message}`,
-        );
+        this.logger.error(`Failed to send log to backend: ${error.message}`);
       });
   }
 
@@ -63,9 +74,7 @@ export class LogStreamService {
         },
       )
       .catch((error) => {
-        this.logger.debug(
-          `Failed to update status on backend: ${error.message}`,
-        );
+        this.logger.error(`Failed to update status on backend: ${error.message}`);
       });
   }
 }

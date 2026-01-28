@@ -72,23 +72,38 @@ export type CommandPayload =
   | CreateNamespacePayload
   | UpdateEnvPayload;
 
+export type Framework =
+  | 'angular'
+  | 'react'
+  | 'vue'
+  | 'nextjs'
+  | 'nodejs'
+  | 'nestjs'
+  | 'docker'
+  | 'static';
+
 export interface DeployPayload {
   projectId: string;
   deploymentId: string;
   namespace: string;
   appName: string;
-  subdomain: string;
-  imageTag: string;
-  port: number;
   domain: string;
-  gitRepoUrl?: string;
-  buildCommand?: string;
+  gitRepoUrl: string;
+  gitBranch: string;
+  framework: Framework;
+  buildCommand: string | null;
+  startCommand: string | null;
+  outputDirectory: string | null;
+  port: number;
   envVars: Record<string, string>;
   resourceConfig: {
     cpu: number;
     ram_mb: number;
     replicas: number;
   };
+  // Legacy fields (optional)
+  subdomain?: string;
+  imageTag?: string;
 }
 
 export interface StopPayload {

@@ -98,6 +98,113 @@ export class KubernetesService {
     return this.executeCommand(cmd);
   }
 
+  async deployAppWithImage(
+    namespace: string,
+    appName: string,
+    imageName: string,
+    port: number,
+    domain: string,
+    envVars: Record<string, string>,
+    resourceConfig: { cpu: number; ram_mb: number; replicas: number },
+  ): Promise<CommandResult> {
+    // Generate Kubernetes manifests
+    const manifest = this.generateManifest(
+      namespace,
+      appName,
+      imageName,
+      port,
+      domain,
+      envVars,
+      resourceConfig,
+    );
+
+    // Apply manifest using kubectl
+    const cmd = `echo '${manifest.replace(/'/g, "'\\''")}' | kubectl apply -f -`;
+    return this.executeCommand(cmd, 120000);
+  }
+
+  private generateManifest(
+    namespace: string,
+    appName: string,
+    imageName: string,
+    port: number,
+    domain: string,
+    envVars: Record<string, string>,
+    resourceConfig: { cpu: number; ram_mb: number; replicas: number },
+  ): string {
+    const envVarYaml = Object.entries(envVars)
+      .map(([key, value]) => `        - name: ${key}\n          value: "${value.replace(/"/g, '\\"')}"`)
+      .join('\n');
+
+    const envSection = envVarYaml ? `\n        env:\n${envVarYaml}` : '';
+
+    return `---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ${appName}
+  namespace: ${namespace}
+  labels:
+    app: ${appName}
+spec:
+  replicas: ${resourceConfig.replicas}
+  selector:
+    matchLabels:
+      app: ${appName}
+  template:
+    metadata:
+      labels:
+        app: ${appName}
+    spec:
+      containers:
+      - name: ${appName}
+        image: ${imageName}
+        imagePullPolicy: Never
+        ports:
+        - containerPort: ${port}${envSection}
+        resources:
+          requests:
+            memory: "${resourceConfig.ram_mb}Mi"
+            cpu: "${resourceConfig.cpu}"
+          limits:
+            memory: "${resourceConfig.ram_mb * 2}Mi"
+            cpu: "${resourceConfig.cpu * 2}"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ${appName}
+  namespace: ${namespace}
+spec:
+  selector:
+    app: ${appName}
+  ports:
+  - port: 80
+    targetPort: ${port}
+  type: ClusterIP
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: ${appName}
+  namespace: ${namespace}
+  annotations:
+    kubernetes.io/ingress.class: traefik
+spec:
+  rules:
+  - host: ${domain}
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: ${appName}
+            port:
+              number: 80
+`;
+  }
+
   // kubectl commands
   async restartDeployment(namespace: string, appName: string): Promise<CommandResult> {
     const cmd = `kubectl rollout restart deployment/${this.escapeArg(appName)} -n ${this.escapeArg(namespace)}`;

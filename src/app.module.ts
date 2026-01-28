@@ -5,6 +5,7 @@ import configuration from './config/configuration';
 import { ApiClientModule } from './api-client';
 import { HeartbeatModule } from './heartbeat';
 import { KubernetesModule } from './kubernetes';
+import { BuildModule } from './build';
 import { CommandProcessorModule } from './command-processor';
 import { HealthModule } from './health';
 
@@ -18,6 +19,7 @@ import { HealthModule } from './health';
     ApiClientModule,
     HeartbeatModule,
     KubernetesModule,
+    BuildModule,
     CommandProcessorModule,
     HealthModule,
   ],

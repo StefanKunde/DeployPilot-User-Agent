@@ -2,63 +2,108 @@ import { Injectable, Logger } from '@nestjs/common';
 import { BaseHandler, HandlerResult } from './base.handler';
 import { Command, DeployPayload } from '../../api-client/types';
 import { KubernetesService } from '../../kubernetes';
+import { BuildService } from '../../build';
 
 @Injectable()
 export class DeployHandler extends BaseHandler<DeployPayload> {
   protected readonly logger = new Logger(DeployHandler.name);
 
-  constructor(kubernetesService: KubernetesService) {
+  constructor(
+    kubernetesService: KubernetesService,
+    private readonly buildService: BuildService,
+  ) {
     super(kubernetesService);
   }
 
   async handle(command: Command): Promise<HandlerResult> {
     const payload = this.getPayload(command);
+    const logs: string[] = [];
 
     this.logger.log(
-      `Deploying ${payload.appName} to namespace ${payload.namespace} with image ${payload.imageTag}`,
+      `Deploying ${payload.appName} to namespace ${payload.namespace}`,
     );
-    this.logger.debug(`Domain: ${payload.domain}, Port: ${payload.port}`);
+    this.logger.log(`Framework: ${payload.framework}, Git: ${payload.gitRepoUrl}`);
 
-    // Step 1: Ensure namespace exists
-    const nsResult = await this.kubernetesService.ensureNamespace(payload.namespace);
-    if (!nsResult.success) {
-      this.logger.error(`Failed to create namespace ${payload.namespace}: ${nsResult.error}`);
-      return this.formatResult(nsResult);
-    }
-
-    // Step 2: Deploy the application
-    const result = await this.kubernetesService.deployApp(
-      payload.namespace,
-      payload.appName,
-      payload.imageTag,
-      payload.port,
-      payload.domain,
-    );
-
-    if (!result.success) {
-      this.logger.error(`Deployment failed for ${payload.appName}: ${result.error}`);
-      return this.formatResult(result);
-    }
-
-    // Step 3: Set environment variables after deployment
-    if (payload.envVars && Object.keys(payload.envVars).length > 0) {
-      this.logger.debug(`Setting ${Object.keys(payload.envVars).length} environment variables`);
-      const envResult = await this.kubernetesService.setEnvVars(
-        payload.namespace,
-        payload.appName,
-        payload.envVars,
-      );
-
-      if (!envResult.success) {
-        this.logger.warn(`Failed to set env vars for ${payload.appName}: ${envResult.error}`);
+    try {
+      // Step 1: Ensure namespace exists
+      this.logger.log(`Step 1: Ensuring namespace ${payload.namespace} exists`);
+      const nsResult = await this.kubernetesService.ensureNamespace(payload.namespace);
+      if (!nsResult.success) {
+        this.logger.error(`Failed to create namespace: ${nsResult.error}`);
         return {
-          success: true,
-          logs: `Deployment succeeded but env vars failed: ${envResult.error}\n${result.stdout}`,
+          success: false,
+          error: `Namespace creation failed: ${nsResult.error}`,
+          logs: nsResult.stdout,
         };
       }
-    }
+      logs.push(`Namespace ${payload.namespace} ready`);
 
-    this.logger.log(`Successfully deployed ${payload.appName} at ${payload.domain}`);
-    return this.formatResult(result);
+      // Step 2: Build the application
+      this.logger.log(`Step 2: Building application from ${payload.gitRepoUrl}`);
+      const buildResult = await this.buildService.build({
+        appName: payload.appName,
+        deploymentId: payload.deploymentId,
+        gitRepoUrl: payload.gitRepoUrl,
+        gitBranch: payload.gitBranch,
+        framework: payload.framework,
+        buildCommand: payload.buildCommand,
+        startCommand: payload.startCommand,
+        outputDirectory: payload.outputDirectory,
+        port: payload.port,
+        envVars: payload.envVars,
+      });
+
+      logs.push(buildResult.logs);
+
+      if (!buildResult.success) {
+        this.logger.error(`Build failed: ${buildResult.error}`);
+        return {
+          success: false,
+          error: `Build failed: ${buildResult.error}`,
+          logs: logs.join('\n'),
+        };
+      }
+
+      this.logger.log(`Build successful: ${buildResult.imageName}`);
+
+      // Step 3: Deploy to Kubernetes
+      this.logger.log(`Step 3: Deploying to Kubernetes`);
+      const deployResult = await this.kubernetesService.deployAppWithImage(
+        payload.namespace,
+        payload.appName,
+        buildResult.imageName,
+        payload.port,
+        payload.domain,
+        payload.envVars,
+        payload.resourceConfig,
+      );
+
+      if (!deployResult.success) {
+        this.logger.error(`Kubernetes deployment failed: ${deployResult.error}`);
+        return {
+          success: false,
+          error: `Deployment failed: ${deployResult.error}`,
+          logs: logs.join('\n') + '\n' + deployResult.stderr,
+        };
+      }
+
+      logs.push(`Deployed to Kubernetes: ${payload.appName}`);
+      logs.push(`Domain: ${payload.domain}`);
+
+      this.logger.log(`Successfully deployed ${payload.appName} at ${payload.domain}`);
+
+      return {
+        success: true,
+        logs: logs.join('\n'),
+      };
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      this.logger.error(`Deployment error: ${errorMessage}`);
+      return {
+        success: false,
+        error: errorMessage,
+        logs: logs.join('\n'),
+      };
+    }
   }
 }

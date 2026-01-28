@@ -19,6 +19,8 @@ services:
     volumes:
       # K3s kubeconfig for kubectl access
       - /etc/rancher/k3s/k3s.yaml:/etc/rancher/k3s/k3s.yaml:ro
+      # DeployPilot config (required by helper scripts)
+      - /etc/deploypilot.env:/etc/deploypilot.env:ro
       # Helper scripts
       - /usr/local/bin/deploypilot-create-namespace:/usr/local/bin/deploypilot-create-namespace:ro
       - /usr/local/bin/deploypilot-deploy-app:/usr/local/bin/deploypilot-deploy-app:ro

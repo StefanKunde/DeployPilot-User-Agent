@@ -83,6 +83,13 @@ export class BuildService {
       const packageManager = await this.detectPackageManager(buildDir);
       log(`Detected package manager: ${packageManager}`, 'info', 'build');
 
+      // Detect port from package.json start script if not explicitly set
+      const detectedPort = await this.detectPortFromPackageJson(buildDir);
+      if (detectedPort) {
+        log(`Detected port from package.json: ${detectedPort}`, 'info', 'build');
+        config.port = detectedPort;
+      }
+
       // Detect Nuxt version if applicable
       if (config.framework === 'nuxt') {
         config.nuxtMajorVersion = await this.detectNuxtVersion(buildDir);
@@ -314,6 +321,33 @@ export class BuildService {
       this.logger.warn('Could not detect Nuxt version from package.json');
     }
     return 3; // Default to Nuxt 3
+  }
+
+  private async detectPortFromPackageJson(buildDir: string): Promise<number | null> {
+    try {
+      const pkgJson = JSON.parse(
+        await fs.readFile(path.join(buildDir, 'package.json'), 'utf8'),
+      );
+      const startScript = pkgJson.scripts?.start || pkgJson.scripts?.dev || '';
+      if (!startScript) return null;
+
+      // Match patterns: PORT=5006, --port=5006, --port 5006, -p 5006, -p=5006
+      const patterns = [
+        /PORT=(\d+)/,
+        /--port[= ](\d+)/,
+        /-p[= ](\d+)/,
+      ];
+
+      for (const pattern of patterns) {
+        const match = startScript.match(pattern);
+        if (match) {
+          return parseInt(match[1], 10);
+        }
+      }
+    } catch {
+      // No package.json or parse error
+    }
+    return null;
   }
 
   private async detectPackageManager(buildDir: string): Promise<PackageManager> {

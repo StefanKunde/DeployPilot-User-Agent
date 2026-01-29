@@ -84,6 +84,13 @@ export class DeployHandler extends BaseHandler<DeployPayload> {
       // Use the detected port from the Docker image
       const containerPort = buildResult.exposedPort;
 
+      // Set PORT env var for server frameworks if not already defined
+      const serverFrameworks = ['nodejs', 'nestjs', 'nextjs', 'nuxt'];
+      if (serverFrameworks.includes(payload.framework) && !payload.envVars.PORT) {
+        payload.envVars.PORT = String(containerPort);
+        this.logStream.sendLog(payload.deploymentId, `Setting PORT=${containerPort} env var`, 'info', 'deploy');
+      }
+
       this.logStream.sendLog(payload.deploymentId, `Creating Deployment (port ${containerPort}), Service, and Ingress with TLS...`, 'info', 'deploy');
       const deployResult = await this.kubernetesService.deployAppWithImage(
         payload.namespace,

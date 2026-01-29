@@ -123,6 +123,11 @@ export class BuildService {
         log(`Generating Dockerfile for framework: ${config.framework} (package manager: ${packageManager})`, 'info', 'build');
         const dockerfile = this.generateDockerfile(config, packageManager, pmInfo.hasLockfile);
         await fs.writeFile(dockerfilePath, dockerfile, 'utf8');
+
+        // Write nginx.conf for static site frameworks
+        if (this.isStaticFramework(config.framework) || config.framework === 'static') {
+          await fs.writeFile(path.join(buildDir, 'nginx.conf'), this.getNginxConfig(), 'utf8');
+        }
       } else {
         log('Using existing Dockerfile from repository', 'info', 'build');
       }
@@ -480,6 +485,27 @@ export class BuildService {
     }
   }
 
+  private getNginxConfig(): string {
+    return `server {
+    listen 80;
+    server_name _;
+    root /usr/share/nginx/html;
+    index index.html;
+
+    location / {
+        try_files $uri $uri/ $uri/index.html /index.html;
+    }
+
+    error_page 404 /404.html;
+
+    location ~* \\.(js|css|png|jpg|jpeg|gif|ico|svg|woff|woff2)$ {
+        expires 1y;
+        add_header Cache-Control "public, immutable";
+    }
+}
+`;
+  }
+
   private getLockfileCopyLine(_pm: PackageManager): string {
     // Copy all possible lockfiles - Docker COPY with glob ignores missing files
     return 'COPY package.json pnpm-lock.yaml* pnpm-workspace.yaml* .npmrc* yarn.lock* package-lock.json* ./';
@@ -517,6 +543,7 @@ RUN OUTPUT_DIR="" && \\
 
 FROM nginx:alpine
 COPY --from=builder /app/_output /usr/share/nginx/html
+COPY nginx.conf /etc/nginx/conf.d/default.conf
 EXPOSE 80
 CMD ["nginx", "-g", "daemon off;"]
 `;
@@ -619,6 +646,7 @@ RUN ${buildCmd}
 FROM nginx:alpine
 # Svelte classic outputs to public/build, copy entire public folder
 COPY --from=builder /app/public /usr/share/nginx/html
+COPY nginx.conf /etc/nginx/conf.d/default.conf
 EXPOSE 80
 CMD ["nginx", "-g", "daemon off;"]
 `;

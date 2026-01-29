@@ -9,6 +9,7 @@ import { BuildModule } from './build';
 import { CommandProcessorModule } from './command-processor';
 import { HealthModule } from './health';
 import { LogStreamModule } from './log-stream';
+import { LogsModule } from './logs';
 
 @Module({
   imports: [
@@ -24,6 +25,7 @@ import { LogStreamModule } from './log-stream';
     BuildModule,
     CommandProcessorModule,
     HealthModule,
+    LogsModule,
   ],
 })
 export class AppModule {}

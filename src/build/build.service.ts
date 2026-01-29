@@ -212,14 +212,23 @@ export class BuildService {
   generateDockerfile(config: BuildConfig): string {
     const { framework, buildCommand, startCommand, outputDirectory, port } = config;
 
-    // Static frameworks (Angular, React, Vue) with outputDirectory
+    // Static frameworks (Angular, React, Vue, Svelte, Vite) → nginx
     if (this.isStaticFramework(framework) || (framework === 'static' && outputDirectory)) {
+      // Classic Svelte (without Vite) outputs to public/build
+      if (framework === 'svelte') {
+        return this.generateSvelteClassicDockerfile(buildCommand);
+      }
       return this.generateStaticDockerfile(buildCommand, outputDirectory || 'dist');
     }
 
-    // Next.js
+    // Next.js (SSR)
     if (framework === 'nextjs') {
       return this.generateNextjsDockerfile();
+    }
+
+    // Nuxt (SSR)
+    if (framework === 'nuxt') {
+      return this.generateNuxtDockerfile();
     }
 
     // Node.js / NestJS with startCommand
@@ -228,11 +237,22 @@ export class BuildService {
     }
 
     // Fallback to static
+    this.logger.warn(`Unknown framework: ${framework}, falling back to static`);
     return this.generateStaticDockerfile(buildCommand, outputDirectory || 'dist');
   }
 
   private isStaticFramework(framework: Framework): boolean {
-    return ['angular', 'react', 'react-vite', 'vue', 'static'].includes(framework);
+    return [
+      'angular',
+      'react',
+      'react-vite',
+      'vue',
+      'vue-vite',
+      'svelte',
+      'svelte-vite',
+      'vite',
+      'static',
+    ].includes(framework);
   }
 
   private generateStaticDockerfile(buildCommand: string | null, outputDirectory: string): string {
@@ -281,6 +301,45 @@ COPY --from=builder /app/package.json ./
 COPY --from=builder /app/public ./public
 EXPOSE 3000
 CMD ["npm", "start"]
+`;
+  }
+
+  private generateNuxtDockerfile(): string {
+    return `# Auto-generated Dockerfile for Nuxt
+FROM node:20-alpine AS builder
+WORKDIR /app
+COPY package*.json ./
+RUN npm ci
+COPY . .
+RUN npm run build
+
+FROM node:20-alpine
+WORKDIR /app
+COPY --from=builder /app/.output /app/.output
+COPY --from=builder /app/package*.json ./
+ENV NODE_ENV=production
+ENV HOST=0.0.0.0
+EXPOSE 3000
+CMD ["node", ".output/server/index.mjs"]
+`;
+  }
+
+  private generateSvelteClassicDockerfile(buildCommand: string | null): string {
+    const buildCmd = buildCommand || 'npm run build';
+
+    return `# Auto-generated Dockerfile for Svelte (classic)
+FROM node:20-alpine AS builder
+WORKDIR /app
+COPY package*.json ./
+RUN npm ci
+COPY . .
+RUN ${buildCmd}
+
+FROM nginx:alpine
+# Svelte classic outputs to public/build, copy entire public folder
+COPY --from=builder /app/public /usr/share/nginx/html
+EXPOSE 80
+CMD ["nginx", "-g", "daemon off;"]
 `;
   }
 

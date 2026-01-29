@@ -77,9 +77,14 @@ export type Framework =
   | 'react'
   | 'react-vite'
   | 'vue'
+  | 'vue-vite'
   | 'nextjs'
+  | 'nuxt'
   | 'nodejs'
   | 'nestjs'
+  | 'svelte'
+  | 'svelte-vite'
+  | 'vite'
   | 'docker'
   | 'static';
 

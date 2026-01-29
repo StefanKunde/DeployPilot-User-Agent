@@ -13,6 +13,11 @@ const BUILD_TIMEOUT = 10 * 60 * 1000; // 10 minutes
 
 type PackageManager = 'npm' | 'pnpm' | 'yarn';
 
+interface PackageManagerInfo {
+  manager: PackageManager;
+  hasLockfile: boolean;
+}
+
 export interface BuildResult {
   success: boolean;
   imageName: string;
@@ -80,8 +85,12 @@ export class BuildService {
       log(`Repository cloned successfully`, 'info', 'clone');
 
       // Step 3: Detect package manager and framework details
-      const packageManager = await this.detectPackageManager(buildDir);
-      log(`Detected package manager: ${packageManager}`, 'info', 'build');
+      const pmInfo = await this.detectPackageManager(buildDir);
+      log(`Detected package manager: ${pmInfo.manager}${pmInfo.hasLockfile ? '' : ' (no lockfile)'}`, 'info', 'build');
+      if (!pmInfo.hasLockfile) {
+        log('No lockfile found, using npm install (slower, less reproducible)', 'warn', 'build');
+      }
+      const packageManager = pmInfo.manager;
 
       // Detect port from package.json start script if not explicitly set
       const detectedPort = await this.detectPortFromPackageJson(buildDir);
@@ -102,7 +111,7 @@ export class BuildService {
 
       if (config.framework !== 'docker' || !dockerfileExists) {
         log(`Generating Dockerfile for framework: ${config.framework} (package manager: ${packageManager})`, 'info', 'build');
-        const dockerfile = this.generateDockerfile(config, packageManager);
+        const dockerfile = this.generateDockerfile(config, packageManager, pmInfo.hasLockfile);
         await fs.writeFile(dockerfilePath, dockerfile, 'utf8');
       } else {
         log('Using existing Dockerfile from repository', 'info', 'build');
@@ -234,9 +243,9 @@ export class BuildService {
       .replace(/oauth2:[^@]+@/g, 'oauth2:***@');
   }
 
-  generateDockerfile(config: BuildConfig, pm: PackageManager = 'npm'): string {
+  generateDockerfile(config: BuildConfig, pm: PackageManager = 'npm', hasLockfile = true): string {
     const { framework, buildCommand, startCommand, outputDirectory, port } = config;
-    const installBlock = this.getInstallBlock(pm);
+    const installBlock = this.getInstallBlock(pm, hasLockfile);
     const defaultBuildCmd = this.getRunBuildCommand(pm);
 
     // Static frameworks (Angular, React, Vue, Svelte, Vite) → nginx
@@ -261,12 +270,12 @@ export class BuildService {
 
     // NestJS (multi-stage build with devDependencies in builder)
     if (framework === 'nestjs') {
-      return this.generateNestjsDockerfile(pm, buildCommand || defaultBuildCmd, port);
+      return this.generateNestjsDockerfile(pm, buildCommand || defaultBuildCmd, port, hasLockfile);
     }
 
     // Node.js with startCommand
     if (framework === 'nodejs' || startCommand) {
-      return this.generateNodejsDockerfile(pm, buildCommand, startCommand, port);
+      return this.generateNodejsDockerfile(pm, buildCommand, startCommand, port, hasLockfile);
     }
 
     // Fallback to static
@@ -355,35 +364,44 @@ export class BuildService {
     return null;
   }
 
-  private async detectPackageManager(buildDir: string): Promise<PackageManager> {
+  private async detectPackageManager(buildDir: string): Promise<PackageManagerInfo> {
     if (await this.fileExists(path.join(buildDir, 'pnpm-lock.yaml'))) {
-      return 'pnpm';
+      return { manager: 'pnpm', hasLockfile: true };
     }
     if (await this.fileExists(path.join(buildDir, 'yarn.lock'))) {
-      return 'yarn';
+      return { manager: 'yarn', hasLockfile: true };
     }
-    return 'npm';
+    const hasLockfile = await this.fileExists(path.join(buildDir, 'package-lock.json'));
+    return { manager: 'npm', hasLockfile };
   }
 
-  private getInstallBlock(pm: PackageManager): string {
+  private getInstallBlock(pm: PackageManager, hasLockfile = true): string {
     switch (pm) {
       case 'pnpm':
-        return 'RUN npm install -g pnpm\nRUN pnpm install --frozen-lockfile';
+        return hasLockfile
+          ? 'RUN npm install -g pnpm\nRUN pnpm install --frozen-lockfile'
+          : 'RUN npm install -g pnpm\nRUN pnpm install';
       case 'yarn':
-        return 'RUN yarn install --frozen-lockfile';
+        return hasLockfile
+          ? 'RUN yarn install --frozen-lockfile'
+          : 'RUN yarn install';
       default:
-        return 'RUN npm ci';
+        return hasLockfile ? 'RUN npm ci' : 'RUN npm install';
     }
   }
 
-  private getProdInstallBlock(pm: PackageManager): string {
+  private getProdInstallBlock(pm: PackageManager, hasLockfile = true): string {
     switch (pm) {
       case 'pnpm':
-        return 'RUN npm install -g pnpm\nRUN pnpm install --frozen-lockfile --prod';
+        return hasLockfile
+          ? 'RUN npm install -g pnpm\nRUN pnpm install --frozen-lockfile --prod'
+          : 'RUN npm install -g pnpm\nRUN pnpm install --prod';
       case 'yarn':
-        return 'RUN yarn install --frozen-lockfile --production';
+        return hasLockfile
+          ? 'RUN yarn install --frozen-lockfile --production'
+          : 'RUN yarn install --production';
       default:
-        return 'RUN npm ci --omit=dev';
+        return hasLockfile ? 'RUN npm ci --omit=dev' : 'RUN npm install --omit=dev';
     }
   }
 
@@ -553,10 +571,10 @@ CMD ["nginx", "-g", "daemon off;"]
     pm: PackageManager,
     buildCmd: string,
     port: number,
+    hasLockfile = true,
   ): string {
     const copyLockfiles = this.getLockfileCopyLine(pm);
-    const installBlock = this.getInstallBlock(pm);
-    const prodInstallBlock = this.getProdInstallBlock(pm);
+    const installBlock = this.getInstallBlock(pm, hasLockfile);
 
     return `# Auto-generated Dockerfile for NestJS
 FROM node:20-alpine AS builder
@@ -582,11 +600,12 @@ CMD ["node", "dist/main"]
     buildCommand: string | null,
     startCommand: string | null,
     port: number,
+    hasLockfile = true,
   ): string {
     const copyLockfiles = this.getLockfileCopyLine(pm);
     const buildStep = buildCommand ? `RUN ${buildCommand}` : '';
     const cmdArray = this.parseStartCommand(startCommand || this.getStartCommand(pm));
-    const prodInstallBlock = this.getProdInstallBlock(pm);
+    const prodInstallBlock = this.getProdInstallBlock(pm, hasLockfile);
 
     return `# Auto-generated Dockerfile for Node.js
 FROM node:20-alpine

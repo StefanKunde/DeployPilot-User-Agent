@@ -259,8 +259,13 @@ export class BuildService {
       return this.generateNuxtDockerfile(pm, installBlock, defaultBuildCmd, config.nuxtMajorVersion || 3);
     }
 
-    // Node.js / NestJS with startCommand
-    if (framework === 'nodejs' || framework === 'nestjs' || startCommand) {
+    // NestJS (multi-stage build with devDependencies in builder)
+    if (framework === 'nestjs') {
+      return this.generateNestjsDockerfile(pm, buildCommand || defaultBuildCmd, port);
+    }
+
+    // Node.js with startCommand
+    if (framework === 'nodejs' || startCommand) {
       return this.generateNodejsDockerfile(pm, buildCommand, startCommand, port);
     }
 
@@ -378,7 +383,7 @@ export class BuildService {
       case 'yarn':
         return 'RUN yarn install --frozen-lockfile --production';
       default:
-        return 'RUN npm ci --only=production';
+        return 'RUN npm ci --omit=dev';
     }
   }
 
@@ -541,6 +546,35 @@ FROM nginx:alpine
 COPY --from=builder /app/public /usr/share/nginx/html
 EXPOSE 80
 CMD ["nginx", "-g", "daemon off;"]
+`;
+  }
+
+  private generateNestjsDockerfile(
+    pm: PackageManager,
+    buildCmd: string,
+    port: number,
+  ): string {
+    const copyLockfiles = this.getLockfileCopyLine(pm);
+    const installBlock = this.getInstallBlock(pm);
+    const prodInstallBlock = this.getProdInstallBlock(pm);
+
+    return `# Auto-generated Dockerfile for NestJS
+FROM node:20-alpine AS builder
+WORKDIR /app
+${copyLockfiles}
+${installBlock}
+COPY . .
+RUN ${buildCmd}
+
+FROM node:20-alpine
+WORKDIR /app
+COPY --from=builder /app/dist ./dist
+COPY --from=builder /app/package*.json ./
+COPY --from=builder /app/pnpm-lock.yaml* /app/pnpm-workspace.yaml* /app/.npmrc* /app/yarn.lock* ./
+${prodInstallBlock}
+ENV NODE_ENV=production
+EXPOSE ${port}
+CMD ["node", "dist/main"]
 `;
   }
 

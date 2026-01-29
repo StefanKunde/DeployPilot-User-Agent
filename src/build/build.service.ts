@@ -105,6 +105,16 @@ export class BuildService {
         log(`Detected Nuxt version: ${config.nuxtMajorVersion}`, 'info', 'build');
       }
 
+      // Detect if nodejs project is actually a static site
+      if (config.framework === 'nodejs' || config.framework === 'static') {
+        const staticCheck = await this.detectStaticSite(buildDir);
+        if (staticCheck.isStatic) {
+          log(`Detected static site generator - will serve with nginx (output: ${staticCheck.outputDir})`, 'info', 'build');
+          config.framework = 'static';
+          config.outputDirectory = staticCheck.outputDir;
+        }
+      }
+
       // Step 4: Generate Dockerfile if needed
       const dockerfilePath = path.join(buildDir, 'Dockerfile');
       const dockerfileExists = await this.fileExists(dockerfilePath);
@@ -362,6 +372,44 @@ export class BuildService {
       // No package.json or parse error
     }
     return null;
+  }
+
+  private async detectStaticSite(buildDir: string): Promise<{ isStatic: boolean; outputDir: string }> {
+    try {
+      const pkgJson = JSON.parse(
+        await fs.readFile(path.join(buildDir, 'package.json'), 'utf8'),
+      );
+
+      const hasBuild = !!pkgJson.scripts?.build;
+      if (!hasBuild) return { isStatic: false, outputDir: '' };
+
+      const startScript = pkgJson.scripts?.start || '';
+
+      // Start script is missing, or is just a dev server / rebuilds
+      const isStaticStart =
+        !startScript ||
+        startScript.includes('serve') ||
+        startScript.includes('live-server') ||
+        startScript.includes('http-server') ||
+        startScript === 'npm run build' ||
+        startScript === 'yarn build' ||
+        startScript === 'pnpm build';
+
+      if (!isStaticStart) return { isStatic: false, outputDir: '' };
+
+      // Guess output directory from common conventions
+      const candidates = ['dist', 'build', 'public', 'out', '_site', 'www'];
+      for (const dir of candidates) {
+        if (await this.fileExists(path.join(buildDir, dir))) {
+          return { isStatic: true, outputDir: dir };
+        }
+      }
+
+      // Default to dist
+      return { isStatic: true, outputDir: 'dist' };
+    } catch {
+      return { isStatic: false, outputDir: '' };
+    }
   }
 
   private async detectPackageManager(buildDir: string): Promise<PackageManagerInfo> {

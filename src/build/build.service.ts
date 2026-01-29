@@ -24,6 +24,7 @@ export interface BuildConfig {
   deploymentId: string;
   gitRepoUrl: string;
   gitBranch: string;
+  githubToken?: string;
   framework: Framework;
   buildCommand: string | null;
   startCommand: string | null;
@@ -61,12 +62,15 @@ export class BuildService {
         config.gitRepoUrl,
         config.gitBranch,
         buildDir,
+        config.githubToken,
       );
       logs.push(cloneResult.output);
 
       if (!cloneResult.success) {
-        log(`Failed to clone repository: ${cloneResult.error}`, 'error', 'clone');
-        throw new Error(`Git clone failed: ${cloneResult.error}`);
+        // Mask token in error message
+        const safeError = this.maskToken(cloneResult.error || 'Unknown error');
+        log(`Failed to clone repository: ${safeError}`, 'error', 'clone');
+        throw new Error(`Git clone failed: ${safeError}`);
       }
       log(`Repository cloned successfully`, 'info', 'clone');
 
@@ -157,23 +161,45 @@ export class BuildService {
     url: string,
     branch: string,
     targetDir: string,
+    token?: string,
   ): Promise<{ success: boolean; output: string; error?: string }> {
-    const cmd = `git clone --depth 1 --branch ${this.escapeArg(branch)} ${this.escapeArg(url)} ${this.escapeArg(targetDir)}`;
+    // Use authenticated URL if token is provided
+    const authUrl = this.getAuthenticatedGitUrl(url, token);
+    const cmd = `git clone --depth 1 --branch ${this.escapeArg(branch)} ${this.escapeArg(authUrl)} ${this.escapeArg(targetDir)}`;
 
     try {
       const { stdout, stderr } = await execAsync(cmd, { timeout: 120000 });
       return {
         success: true,
-        output: stdout + stderr,
+        output: this.maskToken(stdout + stderr),
       };
     } catch (error: unknown) {
       const execError = error as { stdout?: string; stderr?: string; message: string };
       return {
         success: false,
-        output: (execError.stdout || '') + (execError.stderr || ''),
-        error: execError.message,
+        output: this.maskToken((execError.stdout || '') + (execError.stderr || '')),
+        error: this.maskToken(execError.message),
       };
     }
+  }
+
+  private getAuthenticatedGitUrl(gitUrl: string, token?: string): string {
+    if (!token) return gitUrl;
+
+    try {
+      const url = new URL(gitUrl);
+      url.username = 'oauth2';
+      url.password = token;
+      return url.toString();
+    } catch {
+      // If URL parsing fails, try simple string replacement
+      return gitUrl.replace('https://', `https://oauth2:${token}@`);
+    }
+  }
+
+  private maskToken(text: string): string {
+    // Mask oauth2 tokens in URLs
+    return text.replace(/oauth2:[^@]+@/g, 'oauth2:***@');
   }
 
   generateDockerfile(config: BuildConfig): string {

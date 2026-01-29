@@ -33,6 +33,7 @@ export interface BuildConfig {
   outputDirectory: string | null;
   port: number;
   envVars: Record<string, string>;
+  nuxtMajorVersion?: number;
 }
 
 @Injectable()
@@ -78,9 +79,15 @@ export class BuildService {
       }
       log(`Repository cloned successfully`, 'info', 'clone');
 
-      // Step 3: Detect package manager
+      // Step 3: Detect package manager and framework details
       const packageManager = await this.detectPackageManager(buildDir);
       log(`Detected package manager: ${packageManager}`, 'info', 'build');
+
+      // Detect Nuxt version if applicable
+      if (config.framework === 'nuxt') {
+        config.nuxtMajorVersion = await this.detectNuxtVersion(buildDir);
+        log(`Detected Nuxt version: ${config.nuxtMajorVersion}`, 'info', 'build');
+      }
 
       // Step 4: Generate Dockerfile if needed
       const dockerfilePath = path.join(buildDir, 'Dockerfile');
@@ -242,7 +249,7 @@ export class BuildService {
 
     // Nuxt (SSR)
     if (framework === 'nuxt') {
-      return this.generateNuxtDockerfile(pm, installBlock, defaultBuildCmd);
+      return this.generateNuxtDockerfile(pm, installBlock, defaultBuildCmd, config.nuxtMajorVersion || 3);
     }
 
     // Node.js / NestJS with startCommand
@@ -289,6 +296,24 @@ export class BuildService {
     }
 
     return envLines.join('\n');
+  }
+
+  private async detectNuxtVersion(buildDir: string): Promise<number> {
+    try {
+      const pkgJson = JSON.parse(
+        await fs.readFile(path.join(buildDir, 'package.json'), 'utf8'),
+      );
+      const deps = { ...pkgJson.dependencies, ...pkgJson.devDependencies };
+      const nuxtVersion = deps['nuxt'] || '';
+      // Match major version: "^2.15.0" → 2, "^3.0.0" → 3, "2.x" → 2
+      const match = nuxtVersion.match(/(\d+)/);
+      if (match) {
+        return parseInt(match[1], 10);
+      }
+    } catch {
+      this.logger.warn('Could not detect Nuxt version from package.json');
+    }
+    return 3; // Default to Nuxt 3
   }
 
   private async detectPackageManager(buildDir: string): Promise<PackageManager> {
@@ -417,10 +442,33 @@ CMD ${JSON.stringify(startCmd.split(' '))}
     pm: PackageManager,
     installBlock: string,
     buildCmd: string,
+    nuxtMajorVersion: number,
   ): string {
     const copyLockfiles = this.getLockfileCopyLine(pm);
 
-    return `# Auto-generated Dockerfile for Nuxt
+    if (nuxtMajorVersion <= 2) {
+      // Nuxt 2: builds to .nuxt/, needs full node_modules at runtime
+      return `# Auto-generated Dockerfile for Nuxt 2
+FROM node:20-alpine AS builder
+WORKDIR /app
+${copyLockfiles}
+${installBlock}
+COPY . .
+ENV NODE_OPTIONS=--openssl-legacy-provider
+RUN ${buildCmd}
+
+FROM node:20-alpine
+WORKDIR /app
+COPY --from=builder /app ./
+ENV NODE_ENV=production
+ENV HOST=0.0.0.0
+EXPOSE 3000
+CMD ["npx", "nuxt", "start"]
+`;
+    }
+
+    // Nuxt 3: builds to .output/, standalone server
+    return `# Auto-generated Dockerfile for Nuxt 3
 FROM node:20-alpine AS builder
 WORKDIR /app
 ${copyLockfiles}

@@ -87,10 +87,15 @@ export class BuildService {
       if (config.framework !== 'docker' || !dockerfileExists) {
         log(`Generating Dockerfile for framework: ${config.framework} (package manager: ${packageManager})`, 'info', 'build');
         const dockerfile = this.generateDockerfile(config, packageManager);
-        this.logger.log(`Generated Dockerfile:\n${dockerfile}`);
-        this.logStream.sendLog(config.deploymentId, `Generated Dockerfile:\n${dockerfile}`, 'debug', 'build');
-        await fs.writeFile(dockerfilePath, dockerfile);
-        logs.push('Generated Dockerfile:\n' + dockerfile);
+        this.logger.log(`Generated Dockerfile (first 500 chars escaped): ${JSON.stringify(dockerfile).substring(0, 500)}`);
+        await fs.writeFile(dockerfilePath, dockerfile, 'utf8');
+
+        // Verify file was written correctly
+        const written = await fs.readFile(dockerfilePath, 'utf8');
+        const lineCount = written.split('\n').length;
+        log(`Dockerfile written: ${lineCount} lines`, 'info', 'build');
+        this.logStream.sendLog(config.deploymentId, `Dockerfile (${lineCount} lines):\n${written}`, 'debug', 'build');
+        logs.push('Generated Dockerfile:\n' + written);
       } else {
         log('Using existing Dockerfile from repository', 'info', 'build');
       }

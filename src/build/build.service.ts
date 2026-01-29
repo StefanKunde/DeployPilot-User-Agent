@@ -1,5 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { exec } from 'child_process';
+import { exec, spawn } from 'child_process';
 import { promisify } from 'util';
 import * as fs from 'fs/promises';
 import * as path from 'path';
@@ -71,6 +71,8 @@ export class BuildService {
       if (!cloneResult.success) {
         // Mask token in error message
         const safeError = this.maskToken(cloneResult.error || 'Unknown error');
+        const safeOutput = this.maskToken(cloneResult.output);
+        this.logStream.sendLog(config.deploymentId, `Clone output:\n${safeOutput}`, 'error', 'clone');
         log(`Failed to clone repository: ${safeError}`, 'error', 'clone');
         throw new Error(`Git clone failed: ${safeError}`);
       }
@@ -100,25 +102,29 @@ export class BuildService {
         log('Using existing Dockerfile from repository', 'info', 'build');
       }
 
-      // Step 4: Build Docker image
+      // Step 5: Build Docker image (with real-time log streaming)
       log(`Building Docker image...`, 'info', 'build');
       const buildStartTime = Date.now();
-      const buildResult = await this.buildImage(imageTag, buildDir);
+      const buildResult = await this.buildImage(imageTag, buildDir, config.deploymentId);
       logs.push(buildResult.output);
 
       if (!buildResult.success) {
+        // Stream last 20 lines of output for debugging
+        const errorOutput = buildResult.output.split('\n').filter(l => l.trim()).slice(-20).join('\n');
+        this.logStream.sendLog(config.deploymentId, `Build output (last 20 lines):\n${errorOutput}`, 'error', 'build');
         log(`Docker build failed: ${buildResult.error}`, 'error', 'build');
         throw new Error(`Docker build failed: ${buildResult.error}`);
       }
       const buildDuration = Math.round((Date.now() - buildStartTime) / 1000);
       log(`Docker image built successfully in ${buildDuration}s`, 'info', 'build');
 
-      // Step 5: Import image to K3s
+      // Step 6: Import image to K3s
       log(`Importing image to K3s...`, 'info', 'deploy');
       const importResult = await this.importImageToK3s(imageTag);
       logs.push(importResult.output);
 
       if (!importResult.success) {
+        this.logStream.sendLog(config.deploymentId, `K3s import error: ${importResult.output}`, 'error', 'deploy');
         log(`Failed to import image to K3s: ${importResult.error}`, 'error', 'deploy');
         throw new Error(`Image import failed: ${importResult.error}`);
       }
@@ -466,29 +472,75 @@ CMD ${JSON.stringify(cmdArray)}
     return command.split(' ').filter(Boolean);
   }
 
-  private async buildImage(
+  private buildImage(
     imageTag: string,
     buildDir: string,
+    deploymentId: string,
   ): Promise<{ success: boolean; output: string; error?: string }> {
-    const cmd = `docker build -t ${this.escapeArg(imageTag)} ${this.escapeArg(buildDir)}`;
+    return new Promise((resolve) => {
+      const args = ['build', '-t', imageTag, buildDir];
+      const proc = spawn('docker', args);
+      let output = '';
+      let lineBuffer = '';
 
-    try {
-      const { stdout, stderr } = await execAsync(cmd, {
-        timeout: BUILD_TIMEOUT,
-        maxBuffer: 50 * 1024 * 1024, // 50MB buffer for build output
+      const streamLine = (line: string) => {
+        const trimmed = line.trim();
+        if (trimmed) {
+          this.logStream.sendLog(deploymentId, trimmed, 'info', 'build');
+        }
+      };
+
+      proc.stdout.on('data', (data: Buffer) => {
+        const text = data.toString();
+        output += text;
+        lineBuffer += text;
+        const lines = lineBuffer.split('\n');
+        lineBuffer = lines.pop() || '';
+        lines.forEach(streamLine);
       });
-      return {
-        success: true,
-        output: stdout + stderr,
-      };
-    } catch (error: unknown) {
-      const execError = error as { stdout?: string; stderr?: string; message: string };
-      return {
-        success: false,
-        output: (execError.stdout || '') + (execError.stderr || ''),
-        error: execError.message,
-      };
-    }
+
+      proc.stderr.on('data', (data: Buffer) => {
+        const text = data.toString();
+        output += text;
+        // Docker outputs build steps to stderr - stream them
+        lineBuffer += text;
+        const lines = lineBuffer.split('\n');
+        lineBuffer = lines.pop() || '';
+        lines.forEach(streamLine);
+      });
+
+      // Timeout
+      const timeout = setTimeout(() => {
+        proc.kill('SIGKILL');
+        resolve({
+          success: false,
+          output,
+          error: `Docker build timed out after ${BUILD_TIMEOUT / 1000}s`,
+        });
+      }, BUILD_TIMEOUT);
+
+      proc.on('close', (code) => {
+        clearTimeout(timeout);
+        // Flush remaining buffer
+        if (lineBuffer.trim()) {
+          streamLine(lineBuffer);
+        }
+        resolve({
+          success: code === 0,
+          output,
+          error: code !== 0 ? `Docker build exited with code ${code}` : undefined,
+        });
+      });
+
+      proc.on('error', (err) => {
+        clearTimeout(timeout);
+        resolve({
+          success: false,
+          output,
+          error: err.message,
+        });
+      });
+    });
   }
 
   private async importImageToK3s(

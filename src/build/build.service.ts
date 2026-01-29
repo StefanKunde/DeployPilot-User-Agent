@@ -239,7 +239,11 @@ export class BuildService {
       if (framework === 'svelte') {
         return this.generateSvelteClassicDockerfile(pm, installBlock, buildCommand || defaultBuildCmd);
       }
-      return this.generateStaticDockerfile(pm, installBlock, buildCommand || defaultBuildCmd, outputDirectory || 'dist');
+      // Legacy webpack-based frameworks need OpenSSL legacy provider on Node 17+
+      const legacyEnv = this.isLegacyWebpackFramework(framework)
+        ? 'ENV NODE_OPTIONS=--openssl-legacy-provider'
+        : '';
+      return this.generateStaticDockerfile(pm, installBlock, buildCommand || defaultBuildCmd, outputDirectory || 'dist', legacyEnv);
     }
 
     // Next.js (SSR)
@@ -274,6 +278,12 @@ export class BuildService {
       'vite',
       'static',
     ].includes(framework);
+  }
+
+  private isLegacyWebpackFramework(framework: Framework): boolean {
+    // CRA (react), Angular CLI, Vue CLI use webpack which may fail
+    // with ERR_OSSL_EVP_UNSUPPORTED on Node 17+ / OpenSSL 3.0
+    return ['react', 'angular', 'vue'].includes(framework);
   }
 
   private async detectPackageManager(buildDir: string): Promise<PackageManager> {
@@ -340,8 +350,10 @@ export class BuildService {
     installBlock: string,
     buildCmd: string,
     outputDirectory: string,
+    envBlock: string = '',
   ): string {
     const copyLockfiles = this.getLockfileCopyLine(pm);
+    const envLine = envBlock ? `${envBlock}\n` : '';
 
     // Use a smart copy script that finds index.html dynamically
     // This handles Angular 17+ which builds to dist/{project}/browser/
@@ -351,7 +363,7 @@ WORKDIR /app
 ${copyLockfiles}
 ${installBlock}
 COPY . .
-RUN ${buildCmd}
+${envLine}RUN ${buildCmd}
 
 # Find the actual output directory containing index.html
 RUN OUTPUT_DIR=$(find /app/${outputDirectory} -name "index.html" -type f 2>/dev/null | head -1 | xargs dirname 2>/dev/null) && \\

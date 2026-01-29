@@ -14,6 +14,7 @@ const BUILD_TIMEOUT = 10 * 60 * 1000; // 10 minutes
 export interface BuildResult {
   success: boolean;
   imageName: string;
+  exposedPort: number;
   logs: string;
   error?: string;
 }
@@ -106,12 +107,17 @@ export class BuildService {
       }
       log(`Image imported to K3s successfully`, 'info', 'deploy');
 
+      // Step 6: Detect exposed port from image
+      const exposedPort = await this.detectExposedPort(imageTag, config.port);
+      log(`Detected container port: ${exposedPort}`, 'info', 'build');
+
       const totalDuration = Math.round((Date.now() - startTime) / 1000);
       log(`Build completed successfully in ${totalDuration}s`, 'info', 'general');
 
       return {
         success: true,
         imageName: `docker.io/library/${imageTag}`,
+        exposedPort,
         logs: logs.join('\n'),
       };
     } catch (error) {
@@ -123,6 +129,7 @@ export class BuildService {
       return {
         success: false,
         imageName: '',
+        exposedPort: config.port,
         logs: logs.join('\n'),
         error: errorMessage,
       };
@@ -314,6 +321,28 @@ CMD ${JSON.stringify(cmdArray)}
         output: (execError.stdout || '') + (execError.stderr || ''),
         error: execError.message,
       };
+    }
+  }
+
+  private async detectExposedPort(imageTag: string, fallbackPort: number): Promise<number> {
+    try {
+      // Inspect the Docker image to find exposed ports
+      const cmd = `docker inspect ${this.escapeArg(imageTag)} --format='{{range $p, $conf := .Config.ExposedPorts}}{{$p}} {{end}}'`;
+      const { stdout } = await execAsync(cmd, { timeout: 10000 });
+
+      // Parse output like "80/tcp 443/tcp " - take the first port
+      const portMatch = stdout.trim().match(/(\d+)\/tcp/);
+      if (portMatch) {
+        const detectedPort = parseInt(portMatch[1], 10);
+        this.logger.log(`Detected exposed port from image: ${detectedPort}`);
+        return detectedPort;
+      }
+
+      this.logger.log(`No exposed port found in image, using fallback: ${fallbackPort}`);
+      return fallbackPort;
+    } catch (error) {
+      this.logger.warn(`Failed to detect exposed port: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      return fallbackPort;
     }
   }
 

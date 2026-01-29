@@ -74,17 +74,16 @@ export class DeployHandler extends BaseHandler<DeployPayload> {
         };
       }
 
-      this.logger.log(`Build successful: ${buildResult.imageName}`);
+      this.logger.log(`Build successful: ${buildResult.imageName}, port: ${buildResult.exposedPort}`);
 
       // Step 3: Deploy to Kubernetes
       this.logStream.updateStatus(payload.deploymentId, 'deploying');
       this.logStream.sendLog(payload.deploymentId, `Deploying to Kubernetes...`, 'info', 'deploy');
 
-      // Static frameworks use nginx on port 80
-      const staticFrameworks = ['angular', 'react', 'react-vite', 'vue', 'static'];
-      const containerPort = staticFrameworks.includes(payload.framework) ? 80 : payload.port;
+      // Use the detected port from the Docker image
+      const containerPort = buildResult.exposedPort;
 
-      this.logStream.sendLog(payload.deploymentId, `Creating Deployment, Service, and Ingress with TLS...`, 'info', 'deploy');
+      this.logStream.sendLog(payload.deploymentId, `Creating Deployment (port ${containerPort}), Service, and Ingress with TLS...`, 'info', 'deploy');
       const deployResult = await this.kubernetesService.deployAppWithImage(
         payload.namespace,
         payload.appName,

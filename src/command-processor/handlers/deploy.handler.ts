@@ -54,7 +54,7 @@ export class DeployHandler extends BaseHandler<DeployPayload> {
         deploymentId: payload.deploymentId,
         gitRepoUrl: payload.gitRepoUrl,
         gitBranch: payload.gitBranch,
-        githubToken: payload.githubToken,
+        gitToken: payload.gitToken,
         framework: payload.framework,
         buildCommand: payload.buildCommand,
         startCommand: payload.startCommand,

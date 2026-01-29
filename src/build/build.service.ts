@@ -24,7 +24,7 @@ export interface BuildConfig {
   deploymentId: string;
   gitRepoUrl: string;
   gitBranch: string;
-  githubToken?: string;
+  gitToken?: string;
   framework: Framework;
   buildCommand: string | null;
   startCommand: string | null;
@@ -62,7 +62,7 @@ export class BuildService {
         config.gitRepoUrl,
         config.gitBranch,
         buildDir,
-        config.githubToken,
+        config.gitToken,
       );
       logs.push(cloneResult.output);
 
@@ -188,18 +188,25 @@ export class BuildService {
 
     try {
       const url = new URL(gitUrl);
-      url.username = 'oauth2';
+      // GitHub uses x-access-token, GitLab uses oauth2
+      if (url.hostname === 'github.com') {
+        url.username = 'x-access-token';
+      } else {
+        url.username = 'oauth2';
+      }
       url.password = token;
       return url.toString();
     } catch {
-      // If URL parsing fails, try simple string replacement
-      return gitUrl.replace('https://', `https://oauth2:${token}@`);
+      // If URL parsing fails, try simple string replacement for GitHub
+      return gitUrl.replace('https://', `https://x-access-token:${token}@`);
     }
   }
 
   private maskToken(text: string): string {
-    // Mask oauth2 tokens in URLs
-    return text.replace(/oauth2:[^@]+@/g, 'oauth2:***@');
+    // Mask tokens in URLs (x-access-token for GitHub, oauth2 for others)
+    return text
+      .replace(/x-access-token:[^@]+@/g, 'x-access-token:***@')
+      .replace(/oauth2:[^@]+@/g, 'oauth2:***@');
   }
 
   generateDockerfile(config: BuildConfig): string {

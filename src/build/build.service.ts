@@ -126,7 +126,9 @@ export class BuildService {
 
         // Write nginx.conf for static site frameworks
         if (this.isStaticFramework(config.framework) || config.framework === 'static') {
-          await fs.writeFile(path.join(buildDir, 'nginx.conf'), this.getNginxConfig(), 'utf8');
+          const isSpa = await this.isSPA(buildDir);
+          log(`Static site type: ${isSpa ? 'SPA' : 'MPA'}`, 'info', 'build');
+          await fs.writeFile(path.join(buildDir, 'nginx.conf'), this.getNginxConfig(isSpa), 'utf8');
         }
       } else {
         log('Using existing Dockerfile from repository', 'info', 'build');
@@ -485,25 +487,53 @@ export class BuildService {
     }
   }
 
-  private getNginxConfig(): string {
+  private getNginxConfig(isSpa: boolean): string {
+    const tryFiles = isSpa
+      ? 'try_files $uri $uri/ /index.html;'
+      : 'try_files $uri $uri/ $uri/index.html =404;';
+
     return `server {
     listen 80;
     server_name _;
     root /usr/share/nginx/html;
-    index index.html;
+    index index.html index.htm;
 
     location / {
-        try_files $uri $uri/ $uri/index.html /index.html;
+        ${tryFiles}
     }
 
     error_page 404 /404.html;
 
-    location ~* \\.(js|css|png|jpg|jpeg|gif|ico|svg|woff|woff2)$ {
+    location ~* \\.(js|css|png|jpg|jpeg|gif|ico|svg|woff|woff2|ttf|eot)$ {
         expires 1y;
         add_header Cache-Control "public, immutable";
     }
 }
 `;
+  }
+
+  private async isSPA(buildDir: string): Promise<boolean> {
+    try {
+      const pkgJson = JSON.parse(
+        await fs.readFile(path.join(buildDir, 'package.json'), 'utf8'),
+      );
+      const deps = { ...pkgJson.dependencies, ...pkgJson.devDependencies };
+
+      // SSGs / MPAs generate multiple HTML files
+      const mpaDeps = ['astro', 'gatsby', '@11ty/eleventy', 'hexo', 'vitepress'];
+      for (const dep of mpaDeps) {
+        if (deps[dep]) return false;
+      }
+
+      // SPAs use client-side routing
+      const spaDeps = ['react-router', 'react-router-dom', 'vue-router', '@angular/router'];
+      for (const dep of spaDeps) {
+        if (deps[dep]) return true;
+      }
+    } catch {
+      // fallback
+    }
+    return false;
   }
 
   private getLockfileCopyLine(_pm: PackageManager): string {

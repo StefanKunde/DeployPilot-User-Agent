@@ -85,8 +85,10 @@ export class BuildService {
       const dockerfileExists = await this.fileExists(dockerfilePath);
 
       if (config.framework !== 'docker' || !dockerfileExists) {
-        log(`Generating Dockerfile for framework: ${config.framework}`, 'info', 'build');
+        log(`Generating Dockerfile for framework: ${config.framework} (package manager: ${packageManager})`, 'info', 'build');
         const dockerfile = this.generateDockerfile(config, packageManager);
+        this.logger.log(`Generated Dockerfile:\n${dockerfile}`);
+        this.logStream.sendLog(config.deploymentId, `Generated Dockerfile:\n${dockerfile}`, 'debug', 'build');
         await fs.writeFile(dockerfilePath, dockerfile);
         logs.push('Generated Dockerfile:\n' + dockerfile);
       } else {

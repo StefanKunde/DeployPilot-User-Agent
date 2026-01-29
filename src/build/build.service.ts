@@ -391,9 +391,12 @@ export class BuildService {
         startScript.includes('serve') ||
         startScript.includes('live-server') ||
         startScript.includes('http-server') ||
-        startScript === 'npm run build' ||
-        startScript === 'yarn build' ||
-        startScript === 'pnpm build';
+        startScript.includes('browser-sync') ||
+        startScript.includes('npm run build') ||
+        startScript.includes('yarn build') ||
+        startScript.includes('pnpm build');
+
+      this.logger.debug(`Static site check: start="${startScript}", hasBuild=${hasBuild}, isStaticStart=${isStaticStart}`);
 
       if (!isStaticStart) return { isStatic: false, outputDir: '' };
 

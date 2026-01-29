@@ -603,8 +603,31 @@ CMD ["node", "dist/main"]
     hasLockfile = true,
   ): string {
     const copyLockfiles = this.getLockfileCopyLine(pm);
-    const buildStep = buildCommand ? `RUN ${buildCommand}` : '';
     const cmdArray = this.parseStartCommand(startCommand || this.getStartCommand(pm));
+
+    if (buildCommand) {
+      // Multi-stage: install all deps (incl. devDependencies) for build, then copy result
+      const installBlock = this.getInstallBlock(pm, hasLockfile);
+
+      return `# Auto-generated Dockerfile for Node.js (with build step)
+FROM node:20-alpine AS builder
+WORKDIR /app
+${copyLockfiles}
+${installBlock}
+COPY . .
+RUN ${buildCommand}
+
+FROM node:20-alpine
+WORKDIR /app
+COPY --from=builder /app ./
+RUN npm prune --omit=dev 2>/dev/null; true
+ENV NODE_ENV=production
+EXPOSE ${port}
+CMD ${JSON.stringify(cmdArray)}
+`;
+    }
+
+    // No build step: install production deps only
     const prodInstallBlock = this.getProdInstallBlock(pm, hasLockfile);
 
     return `# Auto-generated Dockerfile for Node.js
@@ -613,7 +636,7 @@ WORKDIR /app
 ${copyLockfiles}
 ${prodInstallBlock}
 COPY . .
-${buildStep}
+ENV NODE_ENV=production
 EXPOSE ${port}
 CMD ${JSON.stringify(cmdArray)}
 `;

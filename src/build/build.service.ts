@@ -11,6 +11,8 @@ const execAsync = promisify(exec);
 const BUILD_DIR = '/tmp/deploypilot-builds';
 const BUILD_TIMEOUT = 10 * 60 * 1000; // 10 minutes
 
+type PackageManager = 'npm' | 'pnpm' | 'yarn';
+
 export interface BuildResult {
   success: boolean;
   imageName: string;
@@ -74,13 +76,17 @@ export class BuildService {
       }
       log(`Repository cloned successfully`, 'info', 'clone');
 
-      // Step 3: Generate Dockerfile if needed
+      // Step 3: Detect package manager
+      const packageManager = await this.detectPackageManager(buildDir);
+      log(`Detected package manager: ${packageManager}`, 'info', 'build');
+
+      // Step 4: Generate Dockerfile if needed
       const dockerfilePath = path.join(buildDir, 'Dockerfile');
       const dockerfileExists = await this.fileExists(dockerfilePath);
 
       if (config.framework !== 'docker' || !dockerfileExists) {
         log(`Generating Dockerfile for framework: ${config.framework}`, 'info', 'build');
-        const dockerfile = this.generateDockerfile(config);
+        const dockerfile = this.generateDockerfile(config, packageManager);
         await fs.writeFile(dockerfilePath, dockerfile);
         logs.push('Generated Dockerfile:\n' + dockerfile);
       } else {
@@ -209,36 +215,38 @@ export class BuildService {
       .replace(/oauth2:[^@]+@/g, 'oauth2:***@');
   }
 
-  generateDockerfile(config: BuildConfig): string {
+  generateDockerfile(config: BuildConfig, pm: PackageManager = 'npm'): string {
     const { framework, buildCommand, startCommand, outputDirectory, port } = config;
+    const installCmd = this.getInstallCommand(pm);
+    const defaultBuildCmd = this.getRunBuildCommand(pm);
 
     // Static frameworks (Angular, React, Vue, Svelte, Vite) → nginx
     if (this.isStaticFramework(framework) || (framework === 'static' && outputDirectory)) {
       // Classic Svelte (without Vite) outputs to public/build
       if (framework === 'svelte') {
-        return this.generateSvelteClassicDockerfile(buildCommand);
+        return this.generateSvelteClassicDockerfile(pm, installCmd, buildCommand || defaultBuildCmd);
       }
-      return this.generateStaticDockerfile(buildCommand, outputDirectory || 'dist');
+      return this.generateStaticDockerfile(pm, installCmd, buildCommand || defaultBuildCmd, outputDirectory || 'dist');
     }
 
     // Next.js (SSR)
     if (framework === 'nextjs') {
-      return this.generateNextjsDockerfile();
+      return this.generateNextjsDockerfile(pm, installCmd, defaultBuildCmd);
     }
 
     // Nuxt (SSR)
     if (framework === 'nuxt') {
-      return this.generateNuxtDockerfile();
+      return this.generateNuxtDockerfile(pm, installCmd, defaultBuildCmd);
     }
 
     // Node.js / NestJS with startCommand
     if (framework === 'nodejs' || framework === 'nestjs' || startCommand) {
-      return this.generateNodejsDockerfile(buildCommand, startCommand, port);
+      return this.generateNodejsDockerfile(pm, installCmd, buildCommand, startCommand, port);
     }
 
     // Fallback to static
     this.logger.warn(`Unknown framework: ${framework}, falling back to static`);
-    return this.generateStaticDockerfile(buildCommand, outputDirectory || 'dist');
+    return this.generateStaticDockerfile(pm, installCmd, buildCommand || defaultBuildCmd, outputDirectory || 'dist');
   }
 
   private isStaticFramework(framework: Framework): boolean {
@@ -255,16 +263,69 @@ export class BuildService {
     ].includes(framework);
   }
 
-  private generateStaticDockerfile(buildCommand: string | null, outputDirectory: string): string {
-    const buildCmd = buildCommand || 'npm run build';
+  private async detectPackageManager(buildDir: string): Promise<PackageManager> {
+    if (await this.fileExists(path.join(buildDir, 'pnpm-lock.yaml'))) {
+      return 'pnpm';
+    }
+    if (await this.fileExists(path.join(buildDir, 'yarn.lock'))) {
+      return 'yarn';
+    }
+    return 'npm';
+  }
+
+  private getInstallCommand(pm: PackageManager): string {
+    switch (pm) {
+      case 'pnpm':
+        return 'corepack enable && pnpm install --frozen-lockfile';
+      case 'yarn':
+        return 'yarn install --frozen-lockfile';
+      default:
+        return 'npm ci';
+    }
+  }
+
+  private getRunBuildCommand(pm: PackageManager): string {
+    switch (pm) {
+      case 'pnpm':
+        return 'pnpm run build';
+      case 'yarn':
+        return 'yarn build';
+      default:
+        return 'npm run build';
+    }
+  }
+
+  private getStartCommand(pm: PackageManager): string {
+    switch (pm) {
+      case 'pnpm':
+        return 'pnpm start';
+      case 'yarn':
+        return 'yarn start';
+      default:
+        return 'npm start';
+    }
+  }
+
+  private getLockfileCopyLine(_pm: PackageManager): string {
+    // Copy all possible lockfiles - Docker COPY with glob ignores missing files
+    return 'COPY package.json pnpm-lock.yaml* yarn.lock* package-lock.json* ./';
+  }
+
+  private generateStaticDockerfile(
+    pm: PackageManager,
+    installCmd: string,
+    buildCmd: string,
+    outputDirectory: string,
+  ): string {
+    const copyLockfiles = this.getLockfileCopyLine(pm);
 
     // Use a smart copy script that finds index.html dynamically
     // This handles Angular 17+ which builds to dist/{project}/browser/
     return `# Auto-generated Dockerfile for static site
 FROM node:20-alpine AS builder
 WORKDIR /app
-COPY package*.json ./
-RUN npm ci
+${copyLockfiles}
+RUN ${installCmd}
 COPY . .
 RUN ${buildCmd}
 
@@ -281,16 +342,23 @@ CMD ["nginx", "-g", "daemon off;"]
 `;
   }
 
-  private generateNextjsDockerfile(): string {
+  private generateNextjsDockerfile(
+    pm: PackageManager,
+    installCmd: string,
+    buildCmd: string,
+  ): string {
+    const copyLockfiles = this.getLockfileCopyLine(pm);
+    const startCmd = this.getStartCommand(pm);
+
     return `# Auto-generated Dockerfile for Next.js
 FROM node:20-alpine AS builder
 WORKDIR /app
-COPY package*.json ./
-RUN npm ci
+${copyLockfiles}
+RUN ${installCmd}
 COPY . .
 # Ensure public folder exists (may be missing in some projects)
 RUN mkdir -p public
-RUN npm run build
+RUN ${buildCmd}
 
 FROM node:20-alpine
 WORKDIR /app
@@ -300,18 +368,24 @@ COPY --from=builder /app/node_modules ./node_modules
 COPY --from=builder /app/package.json ./
 COPY --from=builder /app/public ./public
 EXPOSE 3000
-CMD ["npm", "start"]
+CMD ${JSON.stringify(startCmd.split(' '))}
 `;
   }
 
-  private generateNuxtDockerfile(): string {
+  private generateNuxtDockerfile(
+    pm: PackageManager,
+    installCmd: string,
+    buildCmd: string,
+  ): string {
+    const copyLockfiles = this.getLockfileCopyLine(pm);
+
     return `# Auto-generated Dockerfile for Nuxt
 FROM node:20-alpine AS builder
 WORKDIR /app
-COPY package*.json ./
-RUN npm ci
+${copyLockfiles}
+RUN ${installCmd}
 COPY . .
-RUN npm run build
+RUN ${buildCmd}
 
 FROM node:20-alpine
 WORKDIR /app
@@ -324,14 +398,18 @@ CMD ["node", ".output/server/index.mjs"]
 `;
   }
 
-  private generateSvelteClassicDockerfile(buildCommand: string | null): string {
-    const buildCmd = buildCommand || 'npm run build';
+  private generateSvelteClassicDockerfile(
+    pm: PackageManager,
+    installCmd: string,
+    buildCmd: string,
+  ): string {
+    const copyLockfiles = this.getLockfileCopyLine(pm);
 
     return `# Auto-generated Dockerfile for Svelte (classic)
 FROM node:20-alpine AS builder
 WORKDIR /app
-COPY package*.json ./
-RUN npm ci
+${copyLockfiles}
+RUN ${installCmd}
 COPY . .
 RUN ${buildCmd}
 
@@ -344,18 +422,28 @@ CMD ["nginx", "-g", "daemon off;"]
   }
 
   private generateNodejsDockerfile(
+    pm: PackageManager,
+    installCmd: string,
     buildCommand: string | null,
     startCommand: string | null,
     port: number,
   ): string {
+    const copyLockfiles = this.getLockfileCopyLine(pm);
     const buildStep = buildCommand ? `RUN ${buildCommand}` : '';
-    const cmdArray = this.parseStartCommand(startCommand || 'npm start');
+    const cmdArray = this.parseStartCommand(startCommand || this.getStartCommand(pm));
+
+    // For production Node.js, install without dev dependencies
+    const prodInstallCmd = pm === 'pnpm'
+      ? 'corepack enable && pnpm install --frozen-lockfile --prod'
+      : pm === 'yarn'
+        ? 'yarn install --frozen-lockfile --production'
+        : 'npm ci --only=production';
 
     return `# Auto-generated Dockerfile for Node.js
 FROM node:20-alpine
 WORKDIR /app
-COPY package*.json ./
-RUN npm ci --only=production
+${copyLockfiles}
+RUN ${prodInstallCmd}
 COPY . .
 ${buildStep}
 EXPOSE ${port}
@@ -364,7 +452,6 @@ CMD ${JSON.stringify(cmdArray)}
   }
 
   private parseStartCommand(command: string): string[] {
-    // Simple parsing - split by spaces, handling quoted strings would be more complex
     return command.split(' ').filter(Boolean);
   }
 

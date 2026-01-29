@@ -326,7 +326,7 @@ export class BuildService {
 
   private getLockfileCopyLine(_pm: PackageManager): string {
     // Copy all possible lockfiles - Docker COPY with glob ignores missing files
-    return 'COPY package.json pnpm-lock.yaml* yarn.lock* package-lock.json* ./';
+    return 'COPY package.json pnpm-lock.yaml* pnpm-workspace.yaml* .npmrc* yarn.lock* package-lock.json* ./';
   }
 
   private generateStaticDockerfile(

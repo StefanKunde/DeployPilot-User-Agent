@@ -410,6 +410,7 @@ export class BuildService {
       // Guess output directory from dependencies
       const deps = { ...pkgJson.dependencies, ...pkgJson.devDependencies };
       const outputDir = this.guessOutputDirectory(deps);
+      this.logger.log(`guessOutputDirectory: resolved to "${outputDir}"`);
       return { isStatic: true, outputDir };
     } catch {
       return { isStatic: false, outputDir: '' };
@@ -417,10 +418,12 @@ export class BuildService {
   }
 
   private guessOutputDirectory(deps: Record<string, string>): string {
+    if (deps['astro']) return 'dist';
+    if (deps['vite'] || deps['@vitejs/plugin-vue'] || deps['@vitejs/plugin-react']) return 'dist';
     if (deps['react-scripts']) return 'build';
     if (deps['next']) return 'out';
     if (deps['gatsby']) return 'public';
-    // astro, vite, angular, vue, svelte all default to dist
+    if (deps['@11ty/eleventy']) return '_site';
     return 'dist';
   }
 

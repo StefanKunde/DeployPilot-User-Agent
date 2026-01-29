@@ -564,18 +564,8 @@ ${installBlock}
 COPY . .
 ${envLine}RUN ${buildCmd}
 
-# Find the actual output directory containing index.html
-RUN OUTPUT_DIR="" && \\
-    for dir in ${outputDirectory} dist build out public _site www; do \\
-      FOUND=$(find /app/$dir -name "index.html" -type f 2>/dev/null | head -1); \\
-      if [ -n "$FOUND" ]; then OUTPUT_DIR=$(dirname "$FOUND"); break; fi; \\
-    done && \\
-    if [ -z "$OUTPUT_DIR" ]; then echo "ERROR: No build output with index.html found" && exit 1; fi && \\
-    mkdir -p /app/_output && \\
-    cp -r "$OUTPUT_DIR"/* /app/_output/
-
 FROM nginx:alpine
-COPY --from=builder /app/_output /usr/share/nginx/html
+COPY --from=builder /app/${outputDirectory} /usr/share/nginx/html
 COPY nginx.conf /etc/nginx/conf.d/default.conf
 EXPOSE 80
 CMD ["nginx", "-g", "daemon off;"]

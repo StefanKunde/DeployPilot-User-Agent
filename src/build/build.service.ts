@@ -400,19 +400,21 @@ export class BuildService {
 
       if (!isStaticStart) return { isStatic: false, outputDir: '' };
 
-      // Guess output directory from common conventions
-      const candidates = ['dist', 'build', 'public', 'out', '_site', 'www'];
-      for (const dir of candidates) {
-        if (await this.fileExists(path.join(buildDir, dir))) {
-          return { isStatic: true, outputDir: dir };
-        }
-      }
-
-      // Default to dist
-      return { isStatic: true, outputDir: 'dist' };
+      // Guess output directory from dependencies
+      const deps = { ...pkgJson.dependencies, ...pkgJson.devDependencies };
+      const outputDir = this.guessOutputDirectory(deps);
+      return { isStatic: true, outputDir };
     } catch {
       return { isStatic: false, outputDir: '' };
     }
+  }
+
+  private guessOutputDirectory(deps: Record<string, string>): string {
+    if (deps['react-scripts']) return 'build';
+    if (deps['next']) return 'out';
+    if (deps['gatsby']) return 'public';
+    // astro, vite, angular, vue, svelte all default to dist
+    return 'dist';
   }
 
   private async detectPackageManager(buildDir: string): Promise<PackageManagerInfo> {
@@ -504,8 +506,12 @@ COPY . .
 ${envLine}RUN ${buildCmd}
 
 # Find the actual output directory containing index.html
-RUN OUTPUT_DIR=$(find /app/${outputDirectory} -name "index.html" -type f 2>/dev/null | head -1 | xargs dirname 2>/dev/null) && \\
-    if [ -z "$OUTPUT_DIR" ]; then OUTPUT_DIR="/app/${outputDirectory}"; fi && \\
+RUN OUTPUT_DIR="" && \\
+    for dir in ${outputDirectory} dist build out public _site www; do \\
+      FOUND=$(find /app/$dir -name "index.html" -type f 2>/dev/null | head -1); \\
+      if [ -n "$FOUND" ]; then OUTPUT_DIR=$(dirname "$FOUND"); break; fi; \\
+    done && \\
+    if [ -z "$OUTPUT_DIR" ]; then echo "ERROR: No build output with index.html found" && exit 1; fi && \\
     mkdir -p /app/_output && \\
     cp -r "$OUTPUT_DIR"/* /app/_output/
 

@@ -231,11 +231,8 @@ export class BuildService {
       if (framework === 'svelte') {
         return this.generateSvelteClassicDockerfile(pm, installBlock, buildCommand || defaultBuildCmd);
       }
-      // Legacy webpack-based frameworks need OpenSSL legacy provider on Node 17+
-      const legacyEnv = this.isLegacyWebpackFramework(framework)
-        ? 'ENV NODE_OPTIONS=--openssl-legacy-provider'
-        : '';
-      return this.generateStaticDockerfile(pm, installBlock, buildCommand || defaultBuildCmd, outputDirectory || 'dist', legacyEnv);
+      const envBlock = this.getBuildEnvBlock(framework);
+      return this.generateStaticDockerfile(pm, installBlock, buildCommand || defaultBuildCmd, outputDirectory || 'dist', envBlock);
     }
 
     // Next.js (SSR)
@@ -276,6 +273,22 @@ export class BuildService {
     // CRA (react), Angular CLI, Vue CLI use webpack which may fail
     // with ERR_OSSL_EVP_UNSUPPORTED on Node 17+ / OpenSSL 3.0
     return ['react', 'angular', 'vue'].includes(framework);
+  }
+
+  private getBuildEnvBlock(framework: Framework): string {
+    const envLines: string[] = [];
+
+    // Legacy webpack frameworks need OpenSSL legacy provider on Node 17+
+    if (['react', 'angular', 'vue'].includes(framework)) {
+      envLines.push('ENV NODE_OPTIONS=--openssl-legacy-provider');
+    }
+
+    // CRA apps: override homepage setting to serve from /
+    if (framework === 'react') {
+      envLines.push('ENV PUBLIC_URL=/');
+    }
+
+    return envLines.join('\n');
   }
 
   private async detectPackageManager(buildDir: string): Promise<PackageManager> {

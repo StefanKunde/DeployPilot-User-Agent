@@ -32,6 +32,7 @@ export interface BuildConfig {
   gitRepoUrl: string;
   gitBranch: string;
   gitToken?: string;
+  commitSha?: string;
   framework: Framework;
   buildCommand: string | null;
   startCommand: string | null;
@@ -65,12 +66,18 @@ export class BuildService {
       await this.prepareBuildDir(buildDir);
 
       // Step 2: Clone repository
+      if (config.commitSha) {
+        log(`Deploying specific commit: ${config.commitSha.substring(0, 7)}`, 'info', 'clone');
+      } else {
+        log(`Deploying latest from branch: ${config.gitBranch}`, 'info', 'clone');
+      }
       log(`Cloning repository from ${config.gitRepoUrl} (branch: ${config.gitBranch})...`, 'info', 'clone');
       const cloneResult = await this.cloneRepository(
         config.gitRepoUrl,
         config.gitBranch,
         buildDir,
         config.gitToken,
+        config.commitSha,
       );
       logs.push(cloneResult.output);
 
@@ -213,16 +220,28 @@ export class BuildService {
     branch: string,
     targetDir: string,
     token?: string,
+    commitSha?: string,
   ): Promise<{ success: boolean; output: string; error?: string }> {
     // Use authenticated URL if token is provided
     const authUrl = this.getAuthenticatedGitUrl(url, token);
-    const cmd = `git clone --depth 1 --branch ${this.escapeArg(branch)} ${this.escapeArg(authUrl)} ${this.escapeArg(targetDir)}`;
+    // Skip --depth 1 when commitSha is provided (shallow clone may not contain the commit)
+    const depthFlag = commitSha ? '' : '--depth 1';
+    const cmd = `git clone ${depthFlag} --branch ${this.escapeArg(branch)} ${this.escapeArg(authUrl)} ${this.escapeArg(targetDir)}`;
 
     try {
       const { stdout, stderr } = await execAsync(cmd, { timeout: 120000 });
+      let output = stdout + stderr;
+
+      // Checkout specific commit if provided
+      if (commitSha) {
+        const checkoutCmd = `git -C ${this.escapeArg(targetDir)} checkout ${this.escapeArg(commitSha)}`;
+        const checkoutResult = await execAsync(checkoutCmd, { timeout: 30000 });
+        output += checkoutResult.stdout + checkoutResult.stderr;
+      }
+
       return {
         success: true,
-        output: this.maskToken(stdout + stderr),
+        output: this.maskToken(output),
       };
     } catch (error: unknown) {
       const execError = error as { stdout?: string; stderr?: string; message: string };

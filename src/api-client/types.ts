@@ -97,6 +97,7 @@ export interface DeployPayload {
   gitRepoUrl: string;
   gitBranch: string;
   gitToken?: string;
+  commitSha?: string;
   framework: Framework;
   buildCommand: string | null;
   startCommand: string | null;

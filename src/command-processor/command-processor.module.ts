@@ -8,6 +8,8 @@ import {
   DeleteHandler,
   CreateNamespaceHandler,
   UpdateEnvHandler,
+  AddCustomDomainHandler,
+  RemoveCustomDomainHandler,
 } from './handlers';
 
 @Module({
@@ -20,6 +22,8 @@ import {
     DeleteHandler,
     CreateNamespaceHandler,
     UpdateEnvHandler,
+    AddCustomDomainHandler,
+    RemoveCustomDomainHandler,
   ],
   exports: [CommandProcessorService],
 })

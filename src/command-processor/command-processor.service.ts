@@ -9,6 +9,8 @@ import {
   DeleteHandler,
   CreateNamespaceHandler,
   UpdateEnvHandler,
+  AddCustomDomainHandler,
+  RemoveCustomDomainHandler,
   HandlerResult,
 } from './handlers';
 
@@ -29,6 +31,8 @@ export class CommandProcessorService implements OnModuleInit, OnModuleDestroy {
     private readonly deleteHandler: DeleteHandler,
     private readonly createNamespaceHandler: CreateNamespaceHandler,
     private readonly updateEnvHandler: UpdateEnvHandler,
+    private readonly addCustomDomainHandler: AddCustomDomainHandler,
+    private readonly removeCustomDomainHandler: RemoveCustomDomainHandler,
   ) {}
 
   onModuleInit(): void {
@@ -164,6 +168,10 @@ export class CommandProcessorService implements OnModuleInit, OnModuleDestroy {
         return this.createNamespaceHandler;
       case 'UPDATE_ENV':
         return this.updateEnvHandler;
+      case 'ADD_CUSTOM_DOMAIN':
+        return this.addCustomDomainHandler;
+      case 'REMOVE_CUSTOM_DOMAIN':
+        return this.removeCustomDomainHandler;
       default:
         throw new Error(`Unknown command type: ${type}`);
     }

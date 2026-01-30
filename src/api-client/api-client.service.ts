@@ -142,6 +142,25 @@ export class ApiClientService implements OnModuleInit {
     return response.data;
   }
 
+  async updateSslStatus(
+    domainId: string,
+    status: 'active' | 'error',
+  ): Promise<void> {
+    // SSL status endpoint is outside the /api/agents base path
+    const backendUrl = this.configService.get<string>('backendUrl');
+    await axios.patch(
+      `${backendUrl}/api/domains/${domainId}/ssl-status`,
+      { status },
+      {
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Server-Token': this.configService.get<string>('serverToken'),
+        },
+        timeout: 10000,
+      },
+    );
+  }
+
   isRegistered(): boolean {
     return this.registered;
   }

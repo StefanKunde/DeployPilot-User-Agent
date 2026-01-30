@@ -5,3 +5,5 @@ export * from './restart.handler';
 export * from './delete.handler';
 export * from './create-namespace.handler';
 export * from './update-env.handler';
+export * from './add-custom-domain.handler';
+export * from './remove-custom-domain.handler';

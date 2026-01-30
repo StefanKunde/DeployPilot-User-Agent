@@ -283,6 +283,21 @@ spec:
     return this.executeCommand(cmd);
   }
 
+  async applyYaml(yaml: string): Promise<CommandResult> {
+    const cmd = `echo '${yaml.replace(/'/g, "'\\''")}' | kubectl apply -f -`;
+    return this.executeCommand(cmd);
+  }
+
+  async deleteIngress(namespace: string, name: string): Promise<CommandResult> {
+    const cmd = `kubectl delete ingress ${this.escapeArg(name)} -n ${this.escapeArg(namespace)} --ignore-not-found`;
+    return this.executeCommand(cmd);
+  }
+
+  async deleteSecret(namespace: string, name: string): Promise<CommandResult> {
+    const cmd = `kubectl delete secret ${this.escapeArg(name)} -n ${this.escapeArg(namespace)} --ignore-not-found`;
+    return this.executeCommand(cmd);
+  }
+
   private escapeArg(arg: string): string {
     // Escape shell special characters
     return `'${arg.replace(/'/g, "'\\''")}'`;

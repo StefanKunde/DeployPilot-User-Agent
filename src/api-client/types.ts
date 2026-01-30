@@ -52,7 +52,9 @@ export type CommandType =
   | 'RESTART'
   | 'DELETE'
   | 'CREATE_NAMESPACE'
-  | 'UPDATE_ENV';
+  | 'UPDATE_ENV'
+  | 'ADD_CUSTOM_DOMAIN'
+  | 'REMOVE_CUSTOM_DOMAIN';
 
 export type CommandStatus = 'pending' | 'acked' | 'running' | 'completed' | 'failed';
 
@@ -70,7 +72,8 @@ export type CommandPayload =
   | RestartPayload
   | DeletePayload
   | CreateNamespacePayload
-  | UpdateEnvPayload;
+  | UpdateEnvPayload
+  | CustomDomainPayload;
 
 export type Framework =
   | 'angular'
@@ -143,6 +146,14 @@ export interface UpdateEnvPayload {
   namespace: string;
   appName: string;
   envVars: Record<string, string>;
+}
+
+export interface CustomDomainPayload {
+  projectId: string;
+  domainId: string;
+  namespace: string;
+  appName: string;
+  domain: string;
 }
 
 // Command Result

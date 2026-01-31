@@ -16,6 +16,8 @@ import {
   UpdateDatabasePasswordHandler,
   EnableDatabaseExternalAccessHandler,
   DisableDatabaseExternalAccessHandler,
+  CreateBackupHandler,
+  RestoreBackupHandler,
   HandlerResult,
 } from './handlers';
 
@@ -43,6 +45,8 @@ export class CommandProcessorService implements OnModuleInit, OnModuleDestroy {
     private readonly updateDatabasePasswordHandler: UpdateDatabasePasswordHandler,
     private readonly enableDatabaseExternalAccessHandler: EnableDatabaseExternalAccessHandler,
     private readonly disableDatabaseExternalAccessHandler: DisableDatabaseExternalAccessHandler,
+    private readonly createBackupHandler: CreateBackupHandler,
+    private readonly restoreBackupHandler: RestoreBackupHandler,
   ) {}
 
   onModuleInit(): void {
@@ -192,6 +196,10 @@ export class CommandProcessorService implements OnModuleInit, OnModuleDestroy {
         return this.enableDatabaseExternalAccessHandler;
       case 'DISABLE_DATABASE_EXTERNAL_ACCESS':
         return this.disableDatabaseExternalAccessHandler;
+      case 'CREATE_BACKUP':
+        return this.createBackupHandler;
+      case 'RESTORE_BACKUP':
+        return this.restoreBackupHandler;
       default:
         throw new Error(`Unknown command type: ${type}`);
     }

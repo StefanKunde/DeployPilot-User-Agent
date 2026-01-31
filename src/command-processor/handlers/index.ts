@@ -12,3 +12,5 @@ export * from './delete-database.handler';
 export * from './update-database-password.handler';
 export * from './enable-database-external-access.handler';
 export * from './disable-database-external-access.handler';
+export * from './create-backup.handler';
+export * from './restore-backup.handler';

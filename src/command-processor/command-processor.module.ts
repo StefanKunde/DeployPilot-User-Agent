@@ -15,6 +15,8 @@ import {
   UpdateDatabasePasswordHandler,
   EnableDatabaseExternalAccessHandler,
   DisableDatabaseExternalAccessHandler,
+  CreateBackupHandler,
+  RestoreBackupHandler,
 } from './handlers';
 
 @Module({
@@ -34,6 +36,8 @@ import {
     UpdateDatabasePasswordHandler,
     EnableDatabaseExternalAccessHandler,
     DisableDatabaseExternalAccessHandler,
+    CreateBackupHandler,
+    RestoreBackupHandler,
   ],
   exports: [CommandProcessorService],
 })

@@ -59,7 +59,9 @@ export type CommandType =
   | 'DELETE_DATABASE'
   | 'UPDATE_DATABASE_PASSWORD'
   | 'ENABLE_DATABASE_EXTERNAL_ACCESS'
-  | 'DISABLE_DATABASE_EXTERNAL_ACCESS';
+  | 'DISABLE_DATABASE_EXTERNAL_ACCESS'
+  | 'CREATE_BACKUP'
+  | 'RESTORE_BACKUP';
 
 export type CommandStatus = 'pending' | 'acked' | 'running' | 'completed' | 'failed';
 
@@ -83,7 +85,9 @@ export type CommandPayload =
   | DeleteDatabasePayload
   | UpdateDatabasePasswordPayload
   | EnableDatabaseExternalAccessPayload
-  | DisableDatabaseExternalAccessPayload;
+  | DisableDatabaseExternalAccessPayload
+  | CreateBackupPayload
+  | RestoreBackupPayload;
 
 export type Framework =
   | 'angular'
@@ -220,6 +224,34 @@ export interface DisableDatabaseExternalAccessPayload {
   namespace: string;
   type: DatabaseType;
   externalHost: string;
+}
+
+// Backup
+export interface BackupCredentials {
+  host: string;
+  port: number;
+  username: string;
+  password: string;
+  database: string;
+}
+
+export interface CreateBackupPayload {
+  backupId: string;
+  databaseId: string;
+  databaseType: 'postgresql' | 'mongodb';
+  databaseName: string;
+  namespace: string;
+  credentials: BackupCredentials;
+}
+
+export interface RestoreBackupPayload {
+  backupId: string;
+  databaseId: string;
+  databaseType: 'postgresql' | 'mongodb';
+  databaseName: string;
+  namespace: string;
+  downloadUrl: string;
+  credentials: BackupCredentials;
 }
 
 // Command Result

@@ -64,11 +64,14 @@ export class CreateBackupHandler extends BaseHandler<CreateBackupPayload> {
   }
 
   private async createPostgresBackup(credentials: BackupCredentials, outputPath: string): Promise<void> {
-    const { host, port, username, password, database } = credentials;
+    const { host, port, username, password, database, ssl } = credentials;
 
     const result = await execAsync(
       `PGPASSWORD='${password.replace(/'/g, "'\\''")}' pg_dump -h '${host}' -p ${port} -U '${username}' -d '${database}' -Fc -f '${outputPath}'`,
-      { timeout: BACKUP_TIMEOUT },
+      {
+        timeout: BACKUP_TIMEOUT,
+        env: { ...process.env, PGSSLMODE: ssl ? 'require' : 'prefer' },
+      },
     );
 
     if (result.stderr && result.stderr.toLowerCase().includes('error') && !result.stderr.includes('warning')) {
@@ -79,9 +82,10 @@ export class CreateBackupHandler extends BaseHandler<CreateBackupPayload> {
   }
 
   private async createMongoBackup(credentials: BackupCredentials, outputPath: string): Promise<void> {
-    const { host, port, username, password, database } = credentials;
+    const { host, port, username, password, database, ssl } = credentials;
 
-    const uri = `mongodb://${encodeURIComponent(username)}:${encodeURIComponent(password)}@${host}:${port}/${database}?authSource=admin`;
+    const tlsParam = ssl ? '&tls=true' : '';
+    const uri = `mongodb://${encodeURIComponent(username)}:${encodeURIComponent(password)}@${host}:${port}/${database}?authSource=admin${tlsParam}`;
 
     await execAsync(
       `mongodump --uri='${uri}' --archive='${outputPath}' --gzip`,

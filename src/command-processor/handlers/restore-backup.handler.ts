@@ -76,11 +76,14 @@ export class RestoreBackupHandler extends BaseHandler<RestoreBackupPayload> {
   }
 
   private async restorePostgresBackup(credentials: BackupCredentials, backupPath: string): Promise<void> {
-    const { host, port, username, password, database } = credentials;
+    const { host, port, username, password, database, ssl } = credentials;
 
     const result = await execAsync(
       `PGPASSWORD='${password.replace(/'/g, "'\\''")}' pg_restore -h '${host}' -p ${port} -U '${username}' -d '${database}' --clean --if-exists '${backupPath}'`,
-      { timeout: RESTORE_TIMEOUT },
+      {
+        timeout: RESTORE_TIMEOUT,
+        env: { ...process.env, PGSSLMODE: ssl ? 'require' : 'prefer' },
+      },
     );
 
     // pg_restore outputs warnings for objects that don't exist yet when using --clean
@@ -92,9 +95,10 @@ export class RestoreBackupHandler extends BaseHandler<RestoreBackupPayload> {
   }
 
   private async restoreMongoBackup(credentials: BackupCredentials, backupPath: string): Promise<void> {
-    const { host, port, username, password, database } = credentials;
+    const { host, port, username, password, database, ssl } = credentials;
 
-    const uri = `mongodb://${encodeURIComponent(username)}:${encodeURIComponent(password)}@${host}:${port}/${database}?authSource=admin`;
+    const tlsParam = ssl ? '&tls=true' : '';
+    const uri = `mongodb://${encodeURIComponent(username)}:${encodeURIComponent(password)}@${host}:${port}/${database}?authSource=admin${tlsParam}`;
 
     await execAsync(
       `mongorestore --uri='${uri}' --archive='${backupPath}' --gzip --drop`,

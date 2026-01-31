@@ -233,6 +233,7 @@ export interface BackupCredentials {
   username: string;
   password: string;
   database: string;
+  ssl?: boolean;
 }
 
 export interface CreateBackupPayload {

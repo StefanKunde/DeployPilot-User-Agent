@@ -54,7 +54,12 @@ export type CommandType =
   | 'CREATE_NAMESPACE'
   | 'UPDATE_ENV'
   | 'ADD_CUSTOM_DOMAIN'
-  | 'REMOVE_CUSTOM_DOMAIN';
+  | 'REMOVE_CUSTOM_DOMAIN'
+  | 'CREATE_DATABASE'
+  | 'DELETE_DATABASE'
+  | 'UPDATE_DATABASE_PASSWORD'
+  | 'ENABLE_DATABASE_EXTERNAL_ACCESS'
+  | 'DISABLE_DATABASE_EXTERNAL_ACCESS';
 
 export type CommandStatus = 'pending' | 'acked' | 'running' | 'completed' | 'failed';
 
@@ -73,7 +78,12 @@ export type CommandPayload =
   | DeletePayload
   | CreateNamespacePayload
   | UpdateEnvPayload
-  | CustomDomainPayload;
+  | CustomDomainPayload
+  | CreateDatabasePayload
+  | DeleteDatabasePayload
+  | UpdateDatabasePasswordPayload
+  | EnableDatabaseExternalAccessPayload
+  | DisableDatabaseExternalAccessPayload;
 
 export type Framework =
   | 'angular'
@@ -154,6 +164,62 @@ export interface CustomDomainPayload {
   namespace: string;
   appName: string;
   domain: string;
+}
+
+export type DatabaseType = 'postgres' | 'mongodb';
+
+export interface CreateDatabasePayload {
+  databaseId: string;
+  name: string;
+  type: DatabaseType;
+  version: string;
+  namespace: string;
+  storageSize: string;
+  username: string;
+  password: string;
+  databaseName: string;
+  memoryRequest: string;
+  memoryLimit: string;
+  cpuRequest: string;
+  cpuLimit: string;
+  enableExternalAccess: boolean;
+  externalHost: string | null;
+  externalPort: number;
+}
+
+export interface DeleteDatabasePayload {
+  databaseId: string;
+  name: string;
+  namespace: string;
+  type: DatabaseType;
+  externalAccessEnabled: boolean;
+  externalHost: string | null;
+}
+
+export interface UpdateDatabasePasswordPayload {
+  databaseId: string;
+  name: string;
+  namespace: string;
+  type: DatabaseType;
+  username: string;
+  password: string;
+}
+
+export interface EnableDatabaseExternalAccessPayload {
+  databaseId: string;
+  name: string;
+  namespace: string;
+  type: DatabaseType;
+  port: number;
+  externalHost: string;
+}
+
+export interface DisableDatabaseExternalAccessPayload {
+  databaseId: string;
+  name: string;
+  namespace: string;
+  type: DatabaseType;
+  externalHost: string;
 }
 
 // Command Result

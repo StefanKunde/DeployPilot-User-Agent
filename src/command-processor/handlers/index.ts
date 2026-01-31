@@ -7,3 +7,8 @@ export * from './create-namespace.handler';
 export * from './update-env.handler';
 export * from './add-custom-domain.handler';
 export * from './remove-custom-domain.handler';
+export * from './create-database.handler';
+export * from './delete-database.handler';
+export * from './update-database-password.handler';
+export * from './enable-database-external-access.handler';
+export * from './disable-database-external-access.handler';

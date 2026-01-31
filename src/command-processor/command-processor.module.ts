@@ -10,6 +10,11 @@ import {
   UpdateEnvHandler,
   AddCustomDomainHandler,
   RemoveCustomDomainHandler,
+  CreateDatabaseHandler,
+  DeleteDatabaseHandler,
+  UpdateDatabasePasswordHandler,
+  EnableDatabaseExternalAccessHandler,
+  DisableDatabaseExternalAccessHandler,
 } from './handlers';
 
 @Module({
@@ -24,6 +29,11 @@ import {
     UpdateEnvHandler,
     AddCustomDomainHandler,
     RemoveCustomDomainHandler,
+    CreateDatabaseHandler,
+    DeleteDatabaseHandler,
+    UpdateDatabasePasswordHandler,
+    EnableDatabaseExternalAccessHandler,
+    DisableDatabaseExternalAccessHandler,
   ],
   exports: [CommandProcessorService],
 })

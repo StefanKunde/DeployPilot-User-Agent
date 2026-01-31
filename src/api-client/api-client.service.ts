@@ -161,6 +161,39 @@ export class ApiClientService implements OnModuleInit {
     );
   }
 
+  async updateDatabaseStatus(
+    databaseId: string,
+    status: string,
+    errorMessage?: string,
+  ): Promise<void> {
+    const backendUrl = this.configService.get<string>('backendUrl');
+    await axios.patch(
+      `${backendUrl}/api/databases/${databaseId}/status`,
+      { status, errorMessage },
+      {
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Server-Token': this.configService.get<string>('serverToken'),
+        },
+        timeout: 10000,
+      },
+    );
+  }
+
+  async confirmDatabaseDeletion(databaseId: string): Promise<void> {
+    const backendUrl = this.configService.get<string>('backendUrl');
+    await axios.delete(
+      `${backendUrl}/api/databases/${databaseId}/confirm`,
+      {
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Server-Token': this.configService.get<string>('serverToken'),
+        },
+        timeout: 10000,
+      },
+    );
+  }
+
   isRegistered(): boolean {
     return this.registered;
   }

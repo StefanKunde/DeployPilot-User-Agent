@@ -11,6 +11,11 @@ import {
   UpdateEnvHandler,
   AddCustomDomainHandler,
   RemoveCustomDomainHandler,
+  CreateDatabaseHandler,
+  DeleteDatabaseHandler,
+  UpdateDatabasePasswordHandler,
+  EnableDatabaseExternalAccessHandler,
+  DisableDatabaseExternalAccessHandler,
   HandlerResult,
 } from './handlers';
 
@@ -33,6 +38,11 @@ export class CommandProcessorService implements OnModuleInit, OnModuleDestroy {
     private readonly updateEnvHandler: UpdateEnvHandler,
     private readonly addCustomDomainHandler: AddCustomDomainHandler,
     private readonly removeCustomDomainHandler: RemoveCustomDomainHandler,
+    private readonly createDatabaseHandler: CreateDatabaseHandler,
+    private readonly deleteDatabaseHandler: DeleteDatabaseHandler,
+    private readonly updateDatabasePasswordHandler: UpdateDatabasePasswordHandler,
+    private readonly enableDatabaseExternalAccessHandler: EnableDatabaseExternalAccessHandler,
+    private readonly disableDatabaseExternalAccessHandler: DisableDatabaseExternalAccessHandler,
   ) {}
 
   onModuleInit(): void {
@@ -172,6 +182,16 @@ export class CommandProcessorService implements OnModuleInit, OnModuleDestroy {
         return this.addCustomDomainHandler;
       case 'REMOVE_CUSTOM_DOMAIN':
         return this.removeCustomDomainHandler;
+      case 'CREATE_DATABASE':
+        return this.createDatabaseHandler;
+      case 'DELETE_DATABASE':
+        return this.deleteDatabaseHandler;
+      case 'UPDATE_DATABASE_PASSWORD':
+        return this.updateDatabasePasswordHandler;
+      case 'ENABLE_DATABASE_EXTERNAL_ACCESS':
+        return this.enableDatabaseExternalAccessHandler;
+      case 'DISABLE_DATABASE_EXTERNAL_ACCESS':
+        return this.disableDatabaseExternalAccessHandler;
       default:
         throw new Error(`Unknown command type: ${type}`);
     }

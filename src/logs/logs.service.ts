@@ -183,6 +183,144 @@ export class LogsService {
   }
 
   /**
+   * Get logs from a database StatefulSet pod
+   */
+  async getDatabaseLogs(
+    namespace: string,
+    name: string,
+    tail: number = 100,
+    since?: string,
+  ): Promise<{ logs: LogEntry[]; podCount: number }> {
+    this.validateInput(namespace, name);
+
+    const args = [
+      'logs',
+      '-n',
+      namespace,
+      `statefulset/${name}`,
+      '--tail',
+      String(tail),
+      '--timestamps',
+    ];
+
+    if (since) {
+      args.push('--since', since);
+    }
+
+    const cmd = `kubectl ${args.map((a) => this.escapeArg(a)).join(' ')}`;
+
+    try {
+      const { stdout, stderr } = await execAsync(cmd, { timeout: 60000 });
+
+      if (stderr && stderr.includes('error')) {
+        this.logger.warn(`kubectl logs stderr: ${stderr}`);
+      }
+
+      const logs = this.parseLogOutput(stdout, name);
+      return { logs, podCount: 1 };
+    } catch (error: unknown) {
+      const execError = error as { stderr?: string; message: string };
+
+      if (
+        execError.stderr?.includes('not found') ||
+        execError.message?.includes('not found')
+      ) {
+        throw new NotFoundException(
+          `No database pod found for '${name}' in namespace '${namespace}'`,
+        );
+      }
+
+      this.logger.error(`Failed to get database logs: ${execError.message}`);
+      throw error;
+    }
+  }
+
+  /**
+   * Stream logs from a database StatefulSet pod using SSE
+   */
+  streamDatabaseLogs(namespace: string, name: string, tail: number = 100): Observable<LogEntry> {
+    this.validateInput(namespace, name);
+
+    const subject = new Subject<LogEntry>();
+    let process: ChildProcess | null = null;
+    let timeoutHandle: NodeJS.Timeout | null = null;
+
+    const args = [
+      'logs',
+      '-n',
+      namespace,
+      `statefulset/${name}`,
+      '-f',
+      '--timestamps',
+      '--tail',
+      String(tail),
+    ];
+
+    this.logger.log(`Starting database log stream for ${namespace}/${name}`);
+
+    process = spawn('kubectl', args);
+
+    let buffer = '';
+    process.stdout?.on('data', (data: Buffer) => {
+      buffer += data.toString();
+      const lines = buffer.split('\n');
+      buffer = lines.pop() || '';
+
+      for (const line of lines) {
+        if (line.trim()) {
+          const entry = this.parseLogLine(line, name);
+          if (entry) {
+            subject.next(entry);
+          }
+        }
+      }
+    });
+
+    process.stderr?.on('data', (data: Buffer) => {
+      const message = data.toString().trim();
+      if (message && !message.includes('waiting for')) {
+        this.logger.warn(`kubectl database logs stderr: ${message}`);
+      }
+    });
+
+    process.on('close', (code) => {
+      this.logger.log(`Database log stream closed with code ${code}`);
+      if (timeoutHandle) clearTimeout(timeoutHandle);
+      subject.complete();
+    });
+
+    process.on('error', (err) => {
+      this.logger.error(`Database log stream error: ${err.message}`);
+      if (timeoutHandle) clearTimeout(timeoutHandle);
+      subject.error(err);
+    });
+
+    timeoutHandle = setTimeout(() => {
+      this.logger.log(`Database log stream timeout reached for ${namespace}/${name}`);
+      if (process) {
+        process.kill();
+      }
+    }, STREAM_TIMEOUT);
+
+    subject.subscribe({
+      complete: () => {
+        if (process && !process.killed) {
+          process.kill();
+        }
+        if (timeoutHandle) clearTimeout(timeoutHandle);
+      },
+      error: () => {
+        if (process && !process.killed) {
+          process.kill();
+        }
+        if (timeoutHandle) clearTimeout(timeoutHandle);
+      },
+    });
+
+    return subject.asObservable();
+  }
+
+  /**
    * Parse kubectl logs output with timestamps
    * Format: 2024-01-29T10:15:23.456789Z message content
    */

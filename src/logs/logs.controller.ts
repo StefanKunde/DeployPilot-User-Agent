@@ -90,6 +90,73 @@ export class LogsController {
   }
 
   /**
+   * GET /logs/database/:namespace/:name
+   * Fetch logs from a database StatefulSet pod
+   */
+  @Get('database/:namespace/:name')
+  async getDatabaseLogs(
+    @Param('namespace') namespace: string,
+    @Param('name') name: string,
+    @Query() query: LogsQueryDto,
+  ): Promise<LogsResponse> {
+    const tail = query.tail ? parseInt(String(query.tail), 10) : 100;
+    const since = query.since;
+
+    this.logger.log(`Fetching database logs for ${namespace}/${name} (tail=${tail}, since=${since || 'none'})`);
+
+    try {
+      const result = await this.logsService.getDatabaseLogs(namespace, name, tail, since);
+      this.logger.log(`Returned ${result.logs.length} database log entries`);
+      return result;
+    } catch (error) {
+      if (error instanceof NotFoundException) {
+        throw error;
+      }
+
+      const message = error instanceof Error ? error.message : 'Unknown error';
+      this.logger.error(`Failed to fetch database logs: ${message}`);
+      throw new InternalServerErrorException(`Failed to fetch database logs: ${message}`);
+    }
+  }
+
+  /**
+   * GET /logs/database/:namespace/:name/stream (SSE)
+   * Stream database logs in real-time using Server-Sent Events
+   */
+  @Sse('database/:namespace/:name/stream')
+  streamDatabaseLogs(
+    @Param('namespace') namespace: string,
+    @Param('name') name: string,
+    @Query('tail') tail?: string,
+  ): Observable<MessageEvent> {
+    this.logger.log(`Starting SSE database log stream for ${namespace}/${name}`);
+    const tailNum = tail ? parseInt(tail, 10) : 100;
+
+    const heartbeat$ = this.createHeartbeatObservable();
+
+    const logs$ = this.logsService.streamDatabaseLogs(namespace, name, tailNum).pipe(
+      map((entry: LogEntry) => ({
+        data: entry,
+        type: 'log',
+      })),
+      catchError((error) => {
+        const message = error instanceof Error ? error.message : 'Unknown error';
+        this.logger.error(`Database log stream error: ${message}`);
+        return of({
+          data: { error: message },
+          type: 'error',
+        });
+      }),
+    );
+
+    return merge(logs$, heartbeat$).pipe(
+      finalize(() => {
+        this.logger.log(`SSE database stream closed for ${namespace}/${name}`);
+      }),
+    );
+  }
+
+  /**
    * Create heartbeat observable that sends keepalive every 30 seconds
    */
   private createHeartbeatObservable(): Observable<MessageEvent> {

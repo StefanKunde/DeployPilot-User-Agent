@@ -1,6 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { BaseHandler, HandlerResult } from './base.handler';
-import { Command, CreateBackupPayload, BackupCredentials } from '../../api-client/types';
+import { Command, CreateBackupPayload } from '../../api-client/types';
 import { KubernetesService } from '../../kubernetes';
 import { ApiClientService } from '../../api-client';
 import { exec } from 'child_process';
@@ -10,6 +10,8 @@ import { createReadStream } from 'fs';
 
 const execAsync = promisify(exec);
 const BACKUP_TIMEOUT = 600000; // 10 minutes
+const COPY_TIMEOUT = 300000; // 5 minutes
+const CLEANUP_TIMEOUT = 30000; // 30 seconds
 
 @Injectable()
 export class CreateBackupHandler extends BaseHandler<CreateBackupPayload> {
@@ -24,7 +26,7 @@ export class CreateBackupHandler extends BaseHandler<CreateBackupPayload> {
 
   async handle(command: Command): Promise<HandlerResult> {
     const payload = this.getPayload(command);
-    const { backupId, databaseType, databaseName, credentials } = payload;
+    const { backupId, databaseType, databaseName } = payload;
     const backupPath = `/tmp/backup-${backupId}`;
 
     this.logger.log(`Creating ${databaseType} backup for ${databaseName}`);
@@ -33,9 +35,9 @@ export class CreateBackupHandler extends BaseHandler<CreateBackupPayload> {
       await this.apiClient.updateBackupStatus(backupId, 'running');
 
       if (databaseType === 'postgresql') {
-        await this.createPostgresBackup(credentials, backupPath);
+        await this.createPostgresBackup(payload, backupPath);
       } else if (databaseType === 'mongodb') {
-        await this.createMongoBackup(credentials, backupPath);
+        await this.createMongoBackup(payload, backupPath);
       } else {
         throw new Error(`Unsupported database type for backup: ${databaseType}`);
       }
@@ -63,36 +65,59 @@ export class CreateBackupHandler extends BaseHandler<CreateBackupPayload> {
     }
   }
 
-  private async createPostgresBackup(credentials: BackupCredentials, outputPath: string): Promise<void> {
-    const { host, port, username, password, database, ssl } = credentials;
+  private async createPostgresBackup(payload: CreateBackupPayload, outputPath: string): Promise<void> {
+    const { databaseName, namespace, credentials } = payload;
+    const { username, password, database } = credentials;
+    const podName = `${databaseName}-0`;
+    const podBackupPath = '/tmp/backup.dump';
 
-    const result = await execAsync(
-      `PGPASSWORD='${password.replace(/'/g, "'\\''")}' pg_dump -h '${host}' -p ${port} -U '${username}' -d '${database}' -Fc -f '${outputPath}'`,
-      {
-        timeout: BACKUP_TIMEOUT,
-        env: { ...process.env, PGSSLMODE: ssl ? 'require' : 'prefer' },
-      },
-    );
-
-    if (result.stderr && result.stderr.toLowerCase().includes('error') && !result.stderr.includes('warning')) {
-      throw new Error(`pg_dump failed: ${result.stderr}`);
-    }
-
-    this.logger.log(`PostgreSQL backup created: ${outputPath}`);
-  }
-
-  private async createMongoBackup(credentials: BackupCredentials, outputPath: string): Promise<void> {
-    const { host, port, username, password, database, ssl } = credentials;
-
-    const tlsParam = ssl ? '&tls=true' : '';
-    const uri = `mongodb://${encodeURIComponent(username)}:${encodeURIComponent(password)}@${host}:${port}/${database}?authSource=admin${tlsParam}`;
+    const escapedPassword = password.replace(/'/g, "'\\''");
+    const dumpCmd = `PGPASSWORD='${escapedPassword}' pg_dump -U '${username}' -d '${database}' -Fc -f ${podBackupPath}`;
 
     await execAsync(
-      `mongodump --uri='${uri}' --archive='${outputPath}' --gzip`,
+      `kubectl exec -n '${namespace}' '${podName}' -- sh -c "${dumpCmd}"`,
       { timeout: BACKUP_TIMEOUT },
     );
+    this.logger.log(`PostgreSQL dump created in pod ${podName}`);
 
-    this.logger.log(`MongoDB backup created: ${outputPath}`);
+    await execAsync(
+      `kubectl cp '${namespace}/${podName}:${podBackupPath}' '${outputPath}'`,
+      { timeout: COPY_TIMEOUT },
+    );
+    this.logger.log(`Backup copied from pod to ${outputPath}`);
+
+    await execAsync(
+      `kubectl exec -n '${namespace}' '${podName}' -- rm -f ${podBackupPath}`,
+      { timeout: CLEANUP_TIMEOUT },
+    ).catch(() => {});
+  }
+
+  private async createMongoBackup(payload: CreateBackupPayload, outputPath: string): Promise<void> {
+    const { databaseName, namespace, credentials } = payload;
+    const { username, password, database } = credentials;
+    const podName = `${databaseName}-0`;
+    const podBackupPath = '/tmp/backup.archive';
+
+    const escapedPassword = password.replace(/'/g, "'\\''");
+    const uri = `mongodb://${username}:${escapedPassword}@localhost:27017/${database}?authSource=admin`;
+    const dumpCmd = `mongodump --uri='${uri}' --archive=${podBackupPath} --gzip`;
+
+    await execAsync(
+      `kubectl exec -n '${namespace}' '${podName}' -- sh -c '${dumpCmd}'`,
+      { timeout: BACKUP_TIMEOUT },
+    );
+    this.logger.log(`MongoDB dump created in pod ${podName}`);
+
+    await execAsync(
+      `kubectl cp '${namespace}/${podName}:${podBackupPath}' '${outputPath}'`,
+      { timeout: COPY_TIMEOUT },
+    );
+    this.logger.log(`Backup copied from pod to ${outputPath}`);
+
+    await execAsync(
+      `kubectl exec -n '${namespace}' '${podName}' -- rm -f ${podBackupPath}`,
+      { timeout: CLEANUP_TIMEOUT },
+    ).catch(() => {});
   }
 
   private async uploadToR2(filePath: string, uploadUrl: string): Promise<void> {

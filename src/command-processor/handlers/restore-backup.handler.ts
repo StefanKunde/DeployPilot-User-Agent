@@ -1,6 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { BaseHandler, HandlerResult } from './base.handler';
-import { Command, RestoreBackupPayload, BackupCredentials } from '../../api-client/types';
+import { Command, RestoreBackupPayload } from '../../api-client/types';
 import { KubernetesService } from '../../kubernetes';
 import { ApiClientService } from '../../api-client';
 import { exec } from 'child_process';
@@ -12,6 +12,8 @@ import { pipeline } from 'stream/promises';
 
 const execAsync = promisify(exec);
 const RESTORE_TIMEOUT = 600000; // 10 minutes
+const COPY_TIMEOUT = 300000; // 5 minutes
+const CLEANUP_TIMEOUT = 30000; // 30 seconds
 
 @Injectable()
 export class RestoreBackupHandler extends BaseHandler<RestoreBackupPayload> {
@@ -26,7 +28,7 @@ export class RestoreBackupHandler extends BaseHandler<RestoreBackupPayload> {
 
   async handle(command: Command): Promise<HandlerResult> {
     const payload = this.getPayload(command);
-    const { backupId, databaseType, databaseName, downloadUrl, credentials } = payload;
+    const { backupId, databaseType, databaseName, downloadUrl } = payload;
     const backupPath = `/tmp/restore-${backupId}`;
 
     this.logger.log(`Restoring ${databaseType} backup for ${databaseName}`);
@@ -37,9 +39,9 @@ export class RestoreBackupHandler extends BaseHandler<RestoreBackupPayload> {
       await this.downloadFromR2(downloadUrl, backupPath);
 
       if (databaseType === 'postgresql') {
-        await this.restorePostgresBackup(credentials, backupPath);
+        await this.restorePostgresBackup(payload, backupPath);
       } else if (databaseType === 'mongodb') {
-        await this.restoreMongoBackup(credentials, backupPath);
+        await this.restoreMongoBackup(payload, backupPath);
       } else {
         throw new Error(`Unsupported database type for restore: ${databaseType}`);
       }
@@ -75,36 +77,64 @@ export class RestoreBackupHandler extends BaseHandler<RestoreBackupPayload> {
     this.logger.log(`Backup downloaded from R2: ${outputPath}`);
   }
 
-  private async restorePostgresBackup(credentials: BackupCredentials, backupPath: string): Promise<void> {
-    const { host, port, username, password, database, ssl } = credentials;
+  private async restorePostgresBackup(payload: RestoreBackupPayload, backupPath: string): Promise<void> {
+    const { databaseName, namespace, credentials } = payload;
+    const { username, password, database } = credentials;
+    const podName = `${databaseName}-0`;
+    const podRestorePath = '/tmp/restore.dump';
+
+    await execAsync(
+      `kubectl cp '${backupPath}' '${namespace}/${podName}:${podRestorePath}'`,
+      { timeout: COPY_TIMEOUT },
+    );
+    this.logger.log(`Backup copied to pod ${podName}`);
+
+    const escapedPassword = password.replace(/'/g, "'\\''");
+    const restoreCmd = `PGPASSWORD='${escapedPassword}' pg_restore -U '${username}' -d '${database}' --clean --if-exists ${podRestorePath}`;
 
     const result = await execAsync(
-      `PGPASSWORD='${password.replace(/'/g, "'\\''")}' pg_restore -h '${host}' -p ${port} -U '${username}' -d '${database}' --clean --if-exists '${backupPath}'`,
-      {
-        timeout: RESTORE_TIMEOUT,
-        env: { ...process.env, PGSSLMODE: ssl ? 'require' : 'prefer' },
-      },
+      `kubectl exec -n '${namespace}' '${podName}' -- sh -c "${restoreCmd}"`,
+      { timeout: RESTORE_TIMEOUT },
     );
 
-    // pg_restore outputs warnings for objects that don't exist yet when using --clean
     if (result.stderr && result.stderr.toLowerCase().includes('error') && !result.stderr.includes('does not exist')) {
       throw new Error(`pg_restore failed: ${result.stderr}`);
     }
 
-    this.logger.log('PostgreSQL restore completed');
+    await execAsync(
+      `kubectl exec -n '${namespace}' '${podName}' -- rm -f ${podRestorePath}`,
+      { timeout: CLEANUP_TIMEOUT },
+    ).catch(() => {});
+
+    this.logger.log(`PostgreSQL restore completed in pod ${podName}`);
   }
 
-  private async restoreMongoBackup(credentials: BackupCredentials, backupPath: string): Promise<void> {
-    const { host, port, username, password, database, ssl } = credentials;
-
-    const tlsParam = ssl ? '&tls=true' : '';
-    const uri = `mongodb://${encodeURIComponent(username)}:${encodeURIComponent(password)}@${host}:${port}/${database}?authSource=admin${tlsParam}`;
+  private async restoreMongoBackup(payload: RestoreBackupPayload, backupPath: string): Promise<void> {
+    const { databaseName, namespace, credentials } = payload;
+    const { username, password, database } = credentials;
+    const podName = `${databaseName}-0`;
+    const podRestorePath = '/tmp/restore.archive';
 
     await execAsync(
-      `mongorestore --uri='${uri}' --archive='${backupPath}' --gzip --drop`,
+      `kubectl cp '${backupPath}' '${namespace}/${podName}:${podRestorePath}'`,
+      { timeout: COPY_TIMEOUT },
+    );
+    this.logger.log(`Backup copied to pod ${podName}`);
+
+    const escapedPassword = password.replace(/'/g, "'\\''");
+    const uri = `mongodb://${username}:${escapedPassword}@localhost:27017/${database}?authSource=admin`;
+    const restoreCmd = `mongorestore --uri='${uri}' --archive=${podRestorePath} --gzip --drop`;
+
+    await execAsync(
+      `kubectl exec -n '${namespace}' '${podName}' -- sh -c '${restoreCmd}'`,
       { timeout: RESTORE_TIMEOUT },
     );
 
-    this.logger.log('MongoDB restore completed');
+    await execAsync(
+      `kubectl exec -n '${namespace}' '${podName}' -- rm -f ${podRestorePath}`,
+      { timeout: CLEANUP_TIMEOUT },
+    ).catch(() => {});
+
+    this.logger.log(`MongoDB restore completed in pod ${podName}`);
   }
 }

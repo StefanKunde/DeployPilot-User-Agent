@@ -166,7 +166,7 @@ export interface CustomDomainPayload {
   domain: string;
 }
 
-export type DatabaseType = 'postgres' | 'mongodb';
+export type DatabaseType = 'postgres' | 'mongodb' | 'redis';
 
 export interface CreateDatabasePayload {
   databaseId: string;

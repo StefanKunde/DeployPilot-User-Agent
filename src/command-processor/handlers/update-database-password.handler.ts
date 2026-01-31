@@ -20,7 +20,9 @@ export class UpdateDatabasePasswordHandler extends BaseHandler<UpdateDatabasePas
     const envEntries =
       type === 'postgres'
         ? { POSTGRES_USER: username, POSTGRES_PASSWORD: password }
-        : { MONGO_INITDB_ROOT_USERNAME: username, MONGO_INITDB_ROOT_PASSWORD: password };
+        : type === 'mongodb'
+          ? { MONGO_INITDB_ROOT_USERNAME: username, MONGO_INITDB_ROOT_PASSWORD: password }
+          : { REDIS_PASSWORD: password };
 
     const stringData = Object.entries(envEntries)
       .map(([k, v]) => `  ${k}: "${v.replace(/"/g, '\\"')}"`)

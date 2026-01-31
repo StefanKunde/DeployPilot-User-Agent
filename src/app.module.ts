@@ -10,6 +10,7 @@ import { CommandProcessorModule } from './command-processor';
 import { HealthModule } from './health';
 import { LogStreamModule } from './log-stream';
 import { LogsModule } from './logs';
+import { ResourceCollectorModule } from './resource-collector';
 
 @Module({
   imports: [
@@ -26,6 +27,7 @@ import { LogsModule } from './logs';
     CommandProcessorModule,
     HealthModule,
     LogsModule,
+    ResourceCollectorModule,
   ],
 })
 export class AppModule {}

@@ -180,6 +180,21 @@ export class ApiClientService implements OnModuleInit {
     );
   }
 
+  async reportServerResources(resources: object): Promise<void> {
+    const backendUrl = this.configService.get<string>('backendUrl');
+    await axios.post(
+      `${backendUrl}/api/servers/resources`,
+      resources,
+      {
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Server-Token': this.configService.get<string>('serverToken'),
+        },
+        timeout: 10000,
+      },
+    );
+  }
+
   async confirmDatabaseDeletion(databaseId: string): Promise<void> {
     const backendUrl = this.configService.get<string>('backendUrl');
     await axios.delete(

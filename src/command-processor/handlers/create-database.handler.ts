@@ -99,7 +99,7 @@ spec:
 
     const probeCmd =
       p.type === 'postgres'
-        ? `["pg_isready", "-U", "${p.username}"]`
+        ? `["pg_isready", "-U", "${p.username}", "-d", "${p.databaseName}"]`
         : p.type === 'mongodb'
           ? '["mongosh", "--eval", "db.adminCommand(\'ping\')"]'
           : '["redis-cli", "ping"]';

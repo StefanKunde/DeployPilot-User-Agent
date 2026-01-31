@@ -94,6 +94,11 @@ spec:
     const probeCmd = isPostgres
       ? `["pg_isready", "-U", "${p.username}"]`
       : '["mongosh", "--eval", "db.adminCommand(\'ping\')"]';
+    const readinessDelay = isPostgres ? 5 : 10;
+    const readinessPeriod = isPostgres ? 5 : 10;
+    const livenessDelay = isPostgres ? 30 : 30;
+    const livenessPeriod = isPostgres ? 10 : 10;
+    const probeTimeout = isPostgres ? 5 : 10;
 
     const yaml = `apiVersion: apps/v1
 kind: StatefulSet
@@ -136,13 +141,15 @@ spec:
           readinessProbe:
             exec:
               command: ${probeCmd}
-            initialDelaySeconds: 5
-            periodSeconds: 5
+            initialDelaySeconds: ${readinessDelay}
+            periodSeconds: ${readinessPeriod}
+            timeoutSeconds: ${probeTimeout}
           livenessProbe:
             exec:
               command: ${probeCmd}
-            initialDelaySeconds: 30
-            periodSeconds: 10
+            initialDelaySeconds: ${livenessDelay}
+            periodSeconds: ${livenessPeriod}
+            timeoutSeconds: ${probeTimeout}
       volumes:
         - name: data
           persistentVolumeClaim:

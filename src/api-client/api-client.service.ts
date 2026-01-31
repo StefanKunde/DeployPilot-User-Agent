@@ -216,7 +216,7 @@ export class ApiClientService implements OnModuleInit {
 
   async getBackupUploadUrl(backupId: string): Promise<{ uploadUrl: string; key: string }> {
     const backendUrl = this.configService.get<string>('backendUrl');
-    const response = await axios.post<{ uploadUrl: string; key: string }>(
+    const response = await axios.post(
       `${backendUrl}/api/backups/${backupId}/upload-url`,
       {},
       {
@@ -227,7 +227,18 @@ export class ApiClientService implements OnModuleInit {
         timeout: 10000,
       },
     );
-    return response.data;
+
+    // Backend may wrap response in { data: { ... } }
+    const result = response.data?.data || response.data;
+
+    const uploadUrl = result.uploadUrl || result.url;
+    const key = result.key || result.storageKey;
+
+    if (!uploadUrl || typeof uploadUrl !== 'string') {
+      throw new Error(`Invalid upload URL response: ${JSON.stringify(response.data)}`);
+    }
+
+    return { uploadUrl, key };
   }
 
   async confirmDatabaseDeletion(databaseId: string): Promise<void> {
